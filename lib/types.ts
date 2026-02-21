@@ -19,8 +19,18 @@ export interface OverallFunding {
   year?: number;
   countryCode: string; // ISO Alpha-3
   totalRequirements: number;
+  /** On-appeal funding only (default lens used across the UI) */
   totalFunding: number;
+  /** On-appeal % funded (default lens used across the UI) */
   percentFunded: number;
+  /** Off-appeal funding, typically from rows like name = "Not specified" (requirements often 0) */
+  offAppealFunding: number;
+  /** On-appeal + off-appeal funding (for transparency; not comparable as a % funded lens) */
+  totalFundingAll: number;
+  /** % funded if off-appeal funding is included in the numerator */
+  percentFundedAll: number;
+  /** Individual plan/appeal lines for this country */
+  planLines: PlanLine[];
 }
 
 /** Specific crisis allocation per country per cluster */
@@ -33,6 +43,15 @@ export interface CrisisAllocation {
   totalAllocations: number;
   targetedPeople: number;
   reachedPeople: number;
+}
+
+/** Individual plan/appeal line within a country's FTS data */
+export interface PlanLine {
+  name: string;
+  typeName: string; // e.g. "Humanitarian response plan", "Regional response plan", "Flash appeal"
+  requirements: number;
+  funding: number;
+  percentFunded: number;
 }
 
 /** Aggregated crisis allocation per country (summed across clusters) */
@@ -75,16 +94,27 @@ export interface CrisisData {
 /** Global aggregate statistics */
 export interface GlobalStats {
   totalRequirements: number;
+  /** On-appeal funding only (default lens used across the UI) */
   totalFunding: number;
+  /** Off-appeal funding total (typically name = "Not specified") */
+  totalOffAppealFunding: number;
+  /** On-appeal + off-appeal funding */
+  totalFundingAll: number;
   totalCBPFAllocations: number;
+  /** On-appeal % funded (default lens used across the UI) */
   percentFunded: number;
+  /** % funded if off-appeal funding is included in the numerator */
+  percentFundedAll: number;
   countriesInCrisis: number;
   activeCrisisCount: number;
   historicalData?: Record<number, {
     totalRequirements: number;
     totalFunding: number;
+    totalOffAppealFunding: number;
+    totalFundingAll: number;
     totalCBPFAllocations: number;
     percentFunded: number;
+    percentFundedAll: number;
     countriesInCrisis: number;
     activeCrisisCount: number;
   }>;

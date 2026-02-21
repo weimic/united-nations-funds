@@ -38,6 +38,8 @@ import {
   ScatterChart,
   Scatter,
   ZAxis,
+  ReferenceLine,
+  BarChart,
 } from "recharts";
 import type {
   UnifiedCountryData,
@@ -88,19 +90,28 @@ const chartLabelStyle = { color: "rgba(0,200,255,0.85)", fontWeight: 600 };
 function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
   if (!clusters || clusters.length === 0) return null;
 
-  const chartData = [...clusters]
-    .sort((a, b) => b.totalAllocations - a.totalAllocations)
+  const sortedClusters = [...clusters].sort((a, b) => b.totalAllocations - a.totalAllocations);
+
+  const chartData = sortedClusters
     .slice(0, 8)
     .map((c) => {
       const costPerTargeted = c.targetedPeople > 0 ? c.totalAllocations / c.targetedPeople : 0;
       const costPerReached = c.reachedPeople > 0 ? c.totalAllocations / c.reachedPeople : 0;
+      const reachPct = c.targetedPeople > 0 ? Math.round((c.reachedPeople / c.targetedPeople) * 100) : 0;
       return {
         name: c.cluster.length > 14 ? c.cluster.slice(0, 14) + "…" : c.cluster,
         cbpf: Math.round(c.totalAllocations / 1_000),
         costPerTargeted: Math.round(costPerTargeted * 10) / 10,
         costPerReached: Math.round(costPerReached * 10) / 10,
+        reachPct,
       };
     });
+
+  // Delivery summary: show % reached per cluster with 0-reached badges
+  const deliverySummary = sortedClusters.filter(c => c.targetedPeople > 0).map(c => {
+    const reachPct = Math.round((c.reachedPeople / c.targetedPeople) * 100);
+    return { cluster: c.cluster, targeted: c.targetedPeople, reached: c.reachedPeople, reachPct, alloc: c.totalAllocations };
+  });
 
   return (
     <div className="space-y-2 pt-1">
@@ -164,6 +175,39 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
           </ComposedChart>
         </ResponsiveContainer>
       </div>
+
+      {/* Delivery rate summary with 0-reached badges */}
+      {deliverySummary.length > 0 && (
+        <div className="space-y-1 pt-1">
+          <p className="text-[9px] font-mono uppercase tracking-widest text-cyan-400/50">
+            Delivery Rate by Cluster
+          </p>
+          {deliverySummary
+            .sort((a, b) => a.reachPct - b.reachPct)
+            .slice(0, 6)
+            .map((d, idx) => (
+              <div key={idx} className="flex items-center gap-2 text-[9px] font-mono">
+                <span className="text-muted-foreground truncate flex-1 min-w-0">
+                  {d.cluster.length > 18 ? d.cluster.slice(0, 18) + "…" : d.cluster}
+                </span>
+                {d.reached === 0 && d.alloc > 0 && (
+                  <span className="text-[8px] px-1 py-0 rounded bg-red-500/20 text-red-400 border border-red-500/30 font-bold shrink-0">
+                    0 REACHED
+                  </span>
+                )}
+                <div className="w-16 h-1 rounded-full bg-muted/20 overflow-hidden shrink-0">
+                  <div
+                    className={`h-full rounded-full ${d.reachPct === 0 ? "bg-red-500" : d.reachPct < 20 ? "bg-orange-500" : "bg-cyan-500"}`}
+                    style={{ width: `${Math.min(d.reachPct, 100)}%` }}
+                  />
+                </div>
+                <span className={`w-8 text-right shrink-0 ${d.reachPct === 0 ? "text-red-400 font-bold" : d.reachPct < 20 ? "text-orange-400" : "text-cyan-400/60"}`}>
+                  {d.reachPct}%
+                </span>
+              </div>
+            ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -315,6 +359,71 @@ function CountryDetailView({
                       {overall.percentFunded.toFixed(0)}%
                     </span>
                   </div>
+                </div>
+              </div>
+            </>
+          )}
+
+          {/* Appeal / Plan Line Breakdown */}
+          {overall && overall.planLines && overall.planLines.length > 0 && (
+            <>
+              <Separator className="opacity-20" />
+              <div className="space-y-2">
+                <div className="flex items-center gap-2">
+                  <BarChart3 className="h-3.5 w-3.5 text-cyan-400/60" />
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+                    Appeal Breakdown ({overall.planLines.length} plan line{overall.planLines.length !== 1 ? "s" : ""})
+                  </span>
+                </div>
+                <div className="space-y-1.5">
+                  {[...overall.planLines]
+                    .sort((a, b) => b.requirements - a.requirements)
+                    .map((pl, idx) => {
+                      const pct = pl.percentFunded;
+                      const typeBadge = pl.typeName.toLowerCase().includes("flash")
+                        ? "Flash"
+                        : pl.typeName.toLowerCase().includes("refugee") || pl.typeName.toLowerCase().includes("regional")
+                        ? "Regional"
+                        : "HRP";
+                      return (
+                        <div key={idx} className="rounded border border-cyan-500/10 bg-black/30 p-2">
+                          <div className="flex items-start justify-between gap-1 mb-1">
+                            <span className="text-[10px] font-medium leading-tight flex-1">{pl.name}</span>
+                            <span className="text-[8px] font-mono px-1.5 py-0 rounded border border-cyan-500/20 text-cyan-400/60 shrink-0">
+                              {typeBadge}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2 text-[9px] font-mono text-muted-foreground mb-1">
+                            <span>Req: {formatDollars(pl.requirements)}</span>
+                            <span>Funded: {formatDollars(pl.funding)}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <div className="flex-1 h-1 rounded-full bg-muted/20 overflow-hidden">
+                              <div
+                                className={`h-full rounded-full ${pct < 30 ? "bg-red-500" : pct < 50 ? "bg-amber-500" : "bg-cyan-500"}`}
+                                style={{ width: `${Math.min(pct, 100)}%` }}
+                              />
+                            </div>
+                            <span className={`text-[9px] font-mono font-bold ${pct < 50 ? "text-red-400" : "text-cyan-400"}`}>
+                              {pct}%
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  {/* Off-appeal row */}
+                  {overall.offAppealFunding > 0 && (
+                    <div className="rounded border border-cyan-500/10 bg-cyan-500/5 p-2">
+                      <div className="flex items-start justify-between gap-1 mb-1">
+                        <span className="text-[10px] font-medium leading-tight text-cyan-400/70">
+                          Outside plan lines (off-appeal)
+                        </span>
+                      </div>
+                      <span className="text-[9px] font-mono text-cyan-400">
+                        {formatDollars(overall.offAppealFunding)}
+                      </span>
+                    </div>
+                  )}
                 </div>
               </div>
             </>
@@ -1065,7 +1174,16 @@ function ScatterTooltip({ active, payload }: {
   payload?: any[];
 }) {
   if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload as { name: string; severity: number; percentFunded: number; requirements: number } | undefined;
+  const d = payload[0]?.payload as {
+    name: string;
+    severity: number;
+    percentFunded: number;
+    percentFundedAll: number;
+    requirements: number;
+    fundedOnAppeal: number;
+    fundedOffAppeal: number;
+    planLineCount: number;
+  } | undefined;
   if (!d) return null;
   return (
     <div style={chartTooltipStyle}>
@@ -1074,11 +1192,24 @@ function ScatterTooltip({ active, payload }: {
         Severity: {d.severity.toFixed(1)}
       </p>
       <p style={{ color: "rgba(248,113,113,0.9)", fontSize: 10, fontFamily: "monospace" }}>
-        % Funded: {d.percentFunded}%
+        % Funded (on-appeal): {d.percentFunded}%
       </p>
+      {d.fundedOffAppeal > 0 && (
+        <p style={{ color: "rgba(0,200,255,0.6)", fontSize: 10, fontFamily: "monospace" }}>
+          Off-appeal: ${d.fundedOffAppeal}M (all-rows: {d.percentFundedAll}%)
+        </p>
+      )}
       <p style={{ color: "rgba(0,200,255,0.55)", fontSize: 10, fontFamily: "monospace" }}>
         Requirements: ${d.requirements}M
       </p>
+      <p style={{ color: "rgba(0,200,255,0.4)", fontSize: 10, fontFamily: "monospace" }}>
+        Funded (on-appeal): ${d.fundedOnAppeal}M
+      </p>
+      {d.planLineCount > 0 && (
+        <p style={{ color: "rgba(0,200,255,0.35)", fontSize: 9, fontFamily: "monospace" }}>
+          {d.planLineCount} plan line{d.planLineCount !== 1 ? "s" : ""}
+        </p>
+      )}
     </div>
   );
 }
@@ -1094,18 +1225,76 @@ function StatCard({ label, value, className }: { label: string; value: string; c
 }
 
 function GlobalTab() {
-  const { data } = useAppContext();
+  const { data, setSelectedCountryIso3, setSidebarTab, setGlobeFocusIso3 } = useAppContext();
   const stats = data.globalStats;
+
+  // Top 10 funding gaps stacked bar data
+  const fundingGapData = useMemo(() => {
+    return Object.values(data.countries)
+      .filter(c => c.overallFunding && c.overallFunding.totalRequirements > 0)
+      .map(c => {
+        const of_ = c.overallFunding!;
+        const gap = Math.max(0, of_.totalRequirements - of_.totalFundingAll);
+        return {
+          iso3: c.iso3,
+          name: c.name.length > 10 ? c.name.slice(0, 10) + "…" : c.name,
+          fullName: c.name,
+          onAppeal: Math.round(of_.totalFunding / 1_000_000),
+          offAppeal: Math.round(of_.offAppealFunding / 1_000_000),
+          gap: Math.round(gap / 1_000_000),
+          totalGap: Math.round((of_.totalRequirements - of_.totalFunding) / 1_000_000),
+        };
+      })
+      .sort((a, b) => b.totalGap - a.totalGap)
+      .slice(0, 10);
+  }, [data.countries]);
 
   const scatterData = useMemo(() => {
     return Object.values(data.countries)
       .filter(c => c.severity && c.overallFunding && c.overallFunding.totalRequirements > 0)
-      .map(c => ({
-        name: c.name,
-        severity: c.severity!.severityIndex,
-        percentFunded: Math.round(c.overallFunding!.percentFunded),
-        requirements: Math.round(c.overallFunding!.totalRequirements / 1_000_000),
-      }));
+      .map(c => {
+        const reqM = c.overallFunding!.totalRequirements / 1_000_000;
+        return {
+          name: c.name,
+          severity: c.severity!.severityIndex,
+          percentFunded: Math.round(c.overallFunding!.percentFunded),
+          percentFundedAll: Math.round(c.overallFunding!.percentFundedAll),
+          requirements: Math.round(reqM),
+          // Log-scale for bubble sizing so small/medium crises remain visible
+          logRequirements: Math.log10(1 + reqM),
+          fundedOnAppeal: Math.round(c.overallFunding!.totalFunding / 1_000_000),
+          fundedOffAppeal: Math.round(c.overallFunding!.offAppealFunding / 1_000_000),
+          planLineCount: c.overallFunding!.planLines?.length ?? 0,
+        };
+      });
+  }, [data.countries]);
+
+  // Underlooked crises table: Neglect Index v2 ranking
+  const neglectRanking = useMemo(() => {
+    return Object.values(data.countries)
+      .filter(c => c.severity && c.overallFunding && c.overallFunding.totalRequirements > 0)
+      .map(c => {
+        const sev = c.severity!.severityIndex;
+        const pctFunded = c.overallFunding!.percentFunded / 100;
+        const reqM = c.overallFunding!.totalRequirements / 1_000_000;
+        const neglectIndex = (sev / 5) * (1 - pctFunded) * Math.log10(1 + reqM);
+        const gap = c.overallFunding!.totalRequirements - c.overallFunding!.totalFunding;
+        const offAppealShare = c.overallFunding!.totalFundingAll > 0
+          ? (c.overallFunding!.offAppealFunding / c.overallFunding!.totalFundingAll) * 100
+          : 0;
+        return {
+          iso3: c.iso3,
+          name: c.name,
+          severity: sev,
+          percentFunded: c.overallFunding!.percentFunded,
+          requirements: c.overallFunding!.totalRequirements,
+          gap,
+          offAppealShare,
+          neglectIndex,
+        };
+      })
+      .sort((a, b) => b.neglectIndex - a.neglectIndex)
+      .slice(0, 15);
   }, [data.countries]);
 
   return (
@@ -1117,9 +1306,11 @@ function GlobalTab() {
 
         <div className="grid grid-cols-2 gap-2">
           <StatCard label="Total Requirements" value={formatDollars(stats.totalRequirements)} className="text-foreground" />
-          <StatCard label="Total Funded" value={formatDollars(stats.totalFunding)} className="text-cyan-400" />
+          <StatCard label="Funded (On-appeal)" value={formatDollars(stats.totalFunding)} className="text-cyan-400" />
+          <StatCard label="Funded (Off-appeal)" value={formatDollars(stats.totalOffAppealFunding)} className="text-cyan-400" />
           <StatCard label="CBPF Allocations" value={formatDollars(stats.totalCBPFAllocations)} className="text-cyan-400" />
-          <StatCard label="Global % Funded" value={`${stats.percentFunded}%`} className={stats.percentFunded < 50 ? "text-red-400" : "text-cyan-400"} />
+          <StatCard label="% Funded (On-appeal)" value={`${stats.percentFunded}%`} className={stats.percentFunded < 50 ? "text-red-400" : "text-cyan-400"} />
+          <StatCard label="% Funded (All rows)" value={`${stats.percentFundedAll}%`} className={stats.percentFundedAll < 50 ? "text-red-400" : "text-cyan-400"} />
           <StatCard label="Countries in Crisis" value={stats.countriesInCrisis.toString()} className="text-amber-400" />
           <StatCard label="Active Crises" value={stats.activeCrisisCount.toString()} className="text-red-400" />
         </div>
@@ -1131,9 +1322,77 @@ function GlobalTab() {
           </div>
           <p className="text-xl font-bold font-mono text-red-400">{formatDollars(stats.totalRequirements - stats.totalFunding)}</p>
           <Progress value={Math.min(stats.percentFunded, 100)} className="h-1.5" />
-          <p className="text-[10px] font-mono text-muted-foreground">{stats.percentFunded}% of total requirements funded</p>
+          <p className="text-[10px] font-mono text-muted-foreground">
+            {stats.percentFunded}% of total requirements funded (on-appeal)
+          </p>
+          {stats.totalOffAppealFunding > 0 && (
+            <p className="text-[10px] font-mono text-muted-foreground">
+              + {formatDollars(stats.totalOffAppealFunding)} off-appeal (all-rows: {stats.percentFundedAll}%)
+            </p>
+          )}
         </div>
 
+        {/* ── Top 10 Absolute Funding Gaps ─────────────────────────────────── */}
+        {fundingGapData.length > 0 && (
+          <>
+            <Separator className="opacity-20 my-2" />
+            <div className="space-y-2">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
+                Top 10 Absolute Funding Gaps
+              </p>
+              <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
+                Where the most money is missing. Each bar shows funded (on-appeal), funded (off-appeal), and the remaining gap.
+              </p>
+              <div className="h-72 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart
+                    data={fundingGapData}
+                    layout="vertical"
+                    margin={{ top: 4, right: 12, bottom: 4, left: 6 }}
+                  >
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.06)" horizontal={false} />
+                    <XAxis
+                      type="number"
+                      tick={{ fontSize: 8, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace" }}
+                      tickFormatter={(v: number) => v >= 1000 ? `$${(v / 1000).toFixed(0)}B` : `$${v}M`}
+                      tickLine={false}
+                      axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
+                    />
+                    <YAxis
+                      type="category"
+                      dataKey="name"
+                      tick={{ fontSize: 8, fill: "rgba(0,200,255,0.6)", fontFamily: "monospace" }}
+                      tickLine={false}
+                      axisLine={false}
+                      width={62}
+                    />
+                    <Tooltip
+                      contentStyle={chartTooltipStyle}
+                      labelStyle={chartLabelStyle}
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      formatter={(value: any, name: any) => {
+                        const v = typeof value === "number" ? value : parseFloat(String(value ?? 0));
+                        const label = name === "onAppeal" ? "Funded (on-appeal)"
+                          : name === "offAppeal" ? "Funded (off-appeal)"
+                          : "Unfunded Gap";
+                        return [v >= 1000 ? `$${(v / 1000).toFixed(2)}B` : `$${v}M`, label];
+                      }}
+                    />
+                    <Legend
+                      wrapperStyle={{ fontSize: 8, fontFamily: "monospace", color: "rgba(0,200,255,0.5)", paddingTop: 4 }}
+                      iconSize={8}
+                    />
+                    <Bar dataKey="onAppeal" name="Funded (on-appeal)" stackId="a" fill="#22d3ee" radius={0} opacity={0.85} />
+                    <Bar dataKey="offAppeal" name="Funded (off-appeal)" stackId="a" fill="#0e7490" radius={0} opacity={0.7} />
+                    <Bar dataKey="gap" name="Unfunded Gap" stackId="a" fill="#ef4444" radius={[0, 3, 3, 0]} opacity={0.75} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          </>
+        )}
+
+        {/* ── Severity vs Funding Scatter ──────────────────────────────────── */}
         {scatterData.length > 0 && (
           <>
             <Separator className="opacity-20 my-2" />
@@ -1141,12 +1400,8 @@ function GlobalTab() {
               <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
                 Severity vs Funding Disparity
               </p>
-              <div className="h-64 w-full">
+              <div className="h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
-                  {/*
-                    FIX: left:-12 clipped the Y-axis label and tick text.
-                    Use positive margins + explicit YAxis width to ensure full visibility.
-                  */}
                   <ScatterChart margin={{ top: 12, right: 16, bottom: 36, left: 12 }}>
                     <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" />
                     <XAxis
@@ -1158,7 +1413,7 @@ function GlobalTab() {
                       tickLine={false}
                       axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
                       label={{
-                        value: "Severity Index →",
+                        value: "INFORM Severity →",
                         position: "insideBottom",
                         offset: -22,
                         style: { fontSize: 9, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace" },
@@ -1175,14 +1430,18 @@ function GlobalTab() {
                       tickLine={false}
                       axisLine={false}
                       label={{
-                        value: "% Funded",
+                        value: "% Funded (on-appeal)",
                         angle: -90,
                         position: "insideLeft",
-                        offset: 12,
-                        style: { fontSize: 9, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace", textAnchor: "middle" },
+                        offset: 8,
+                        style: { fontSize: 8, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace", textAnchor: "middle" },
                       }}
                     />
-                    <ZAxis type="number" dataKey="requirements" range={[30, 500]} name="Requirements ($M)" />
+                    {/* Log-scale bubble size so small/medium crises remain visible */}
+                    <ZAxis type="number" dataKey="logRequirements" range={[30, 450]} name="Requirements (log scale)" />
+                    {/* Reference lines for decision-grade reading */}
+                    <ReferenceLine x={3.5} stroke="rgba(248,113,113,0.3)" strokeDasharray="4 3" label={{ value: "High Severity", position: "top", style: { fontSize: 7, fill: "rgba(248,113,113,0.5)", fontFamily: "monospace" } }} />
+                    <ReferenceLine y={50} stroke="rgba(34,211,238,0.3)" strokeDasharray="4 3" label={{ value: "50% Funded", position: "right", style: { fontSize: 7, fill: "rgba(34,211,238,0.5)", fontFamily: "monospace" } }} />
                     <Tooltip
                       cursor={{ strokeDasharray: "3 3", stroke: "rgba(0,200,255,0.25)" }}
                       content={<ScatterTooltip />}
@@ -1198,8 +1457,66 @@ function GlobalTab() {
                 </ResponsiveContainer>
               </div>
               <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
-                Bubble size represents total requirements. Countries in the bottom right (high severity, low funding) indicate the largest disparities.
+                Bubble size = requirements (log scale). Bottom-right quadrant = high severity, low funding — the most neglected crises.
               </p>
+            </div>
+          </>
+        )}
+
+        {/* ── Underlooked Crises Table ─────────────────────────────────────── */}
+        {neglectRanking.length > 0 && (
+          <>
+            <Separator className="opacity-20 my-2" />
+            <div className="space-y-2">
+              <div className="flex items-center gap-2 px-1">
+                <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
+                  Underlooked Crises (Severity-Adjusted)
+                </p>
+              </div>
+              <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
+                Ranked by Neglect Index: combines severity, funding gap, and crisis scale. Higher = more underlooked.
+              </p>
+              <div className="space-y-1">
+                {neglectRanking.map((row, idx) => {
+                  const barWidth = neglectRanking[0].neglectIndex > 0
+                    ? (row.neglectIndex / neglectRanking[0].neglectIndex) * 100
+                    : 0;
+                  return (
+                    <button
+                      key={row.iso3}
+                      onClick={() => {
+                        setSelectedCountryIso3(row.iso3);
+                        setGlobeFocusIso3(row.iso3);
+                        setSidebarTab("countries");
+                      }}
+                      className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
+                    >
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className="text-[9px] font-mono text-cyan-400/40 w-4 shrink-0">{idx + 1}.</span>
+                        <span className="text-[11px] font-medium flex-1 truncate">{row.name}</span>
+                        <span className="text-[9px] font-mono text-red-400 font-bold shrink-0">
+                          {row.neglectIndex.toFixed(2)}
+                        </span>
+                      </div>
+                      <div className="h-1 rounded-full bg-muted/20 overflow-hidden mb-1">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-red-500"
+                          style={{ width: `${barWidth}%` }}
+                        />
+                      </div>
+                      <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground">
+                        <span>Sev: <strong className="text-amber-400">{row.severity.toFixed(1)}</strong></span>
+                        <span>Funded: <strong className={row.percentFunded < 50 ? "text-red-400" : "text-cyan-400"}>{row.percentFunded}%</strong></span>
+                        <span>Gap: <strong className="text-red-400">{formatDollars(row.gap)}</strong></span>
+                        {row.offAppealShare > 5 && (
+                          <span>Off-appeal: <strong className="text-cyan-400/60">{row.offAppealShare.toFixed(0)}%</strong></span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
             </div>
           </>
         )}

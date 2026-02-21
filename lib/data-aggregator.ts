@@ -5,6 +5,7 @@ import Papa from "papaparse";
 import type {
   InformSeverity,
   OverallFunding,
+  PlanLine,
   CrisisAllocation,
   CrisisCountryAllocation,
   CrisisData,
@@ -189,10 +190,13 @@ function parseOverallFunding(): OverallFunding[] {
   const raw = fs.readFileSync(csvPath, "utf-8");
   const parsed = Papa.parse(raw, { header: true, skipEmptyLines: true });
 
-  // Group by countryCode and aggregate
+  // Group by countryCode and aggregate.
+  // IMPORTANT: the FTS file contains both on-appeal rows (with comparable requirements)
+  // and off-appeal rows (commonly name = "Not specified" with requirements = 0).
+  // The default lens across the app is on-appeal only; off-appeal is reported separately.
   const byCountry = new Map<
     string,
-    { requirements: number; funding: number }
+    { requirements: number; onAppealFunding: number; offAppealFunding: number; planLines: Map<string, PlanLine> }
   >();
 
   for (const row of parsed.data as Record<string, string>[]) {
@@ -210,24 +214,63 @@ function parseOverallFunding(): OverallFunding[] {
     const code = row.countryCode.toUpperCase();
     const req = parseFloat(row.requirements) || 0;
     const fund = parseFloat(row.funding) || 0;
+    const name = (row.name || "").trim();
+    const nameLower = name.toLowerCase();
+    const isOffAppeal = nameLower === "not specified";
+    const typeName = (row.typeName || "").trim();
 
     if (!byCountry.has(code)) {
-      byCountry.set(code, { requirements: 0, funding: 0 });
+      byCountry.set(code, { requirements: 0, onAppealFunding: 0, offAppealFunding: 0, planLines: new Map() });
     }
     const entry = byCountry.get(code)!;
+
+    if (isOffAppeal) {
+      entry.offAppealFunding += fund;
+      continue;
+    }
+
     entry.requirements += req;
-    entry.funding += fund;
+    entry.onAppealFunding += fund;
+
+    // Track individual plan lines for appeal breakdown
+    if (name) {
+      const existing = entry.planLines.get(name);
+      if (existing) {
+        existing.requirements += req;
+        existing.funding += fund;
+      } else {
+        entry.planLines.set(name, { name, typeName, requirements: req, funding: fund, percentFunded: 0 });
+      }
+    }
   }
 
-  return Array.from(byCountry.entries()).map(([code, data]) => ({
-    countryCode: code,
-    totalRequirements: data.requirements,
-    totalFunding: data.funding,
-    percentFunded:
+  return Array.from(byCountry.entries()).map(([code, data]) => {
+    const totalFundingAll = data.onAppealFunding + data.offAppealFunding;
+    const percentFunded =
       data.requirements > 0
-        ? Math.round((data.funding / data.requirements) * 100)
-        : 0,
-  }));
+        ? Math.round((data.onAppealFunding / data.requirements) * 100)
+        : 0;
+    const percentFundedAll =
+      data.requirements > 0
+        ? Math.round((totalFundingAll / data.requirements) * 100)
+        : 0;
+
+    const planLines = Array.from(data.planLines.values()).map(pl => ({
+      ...pl,
+      percentFunded: pl.requirements > 0 ? Math.round((pl.funding / pl.requirements) * 100) : 0,
+    }));
+
+    return {
+      countryCode: code,
+      totalRequirements: data.requirements,
+      totalFunding: data.onAppealFunding,
+      percentFunded,
+      offAppealFunding: data.offAppealFunding,
+      totalFundingAll,
+      percentFundedAll,
+      planLines,
+    };
+  });
 }
 
 // ── Specific Crisis ────────────────────────────────────────────────────────────
@@ -414,11 +457,13 @@ export function aggregateAllData(): AggregatedData {
       const reachedPeople = crisisAllocation?.totalReachedPeople || 0;
       const cbpfAllocations = crisisAllocation?.totalAllocations || 0;
 
-      // Neglect Index: (Severity/5) * (1 - %Funded) * log10(1 + TargetedPeople)
-      // Log scale for people ensures magnitude matters but doesn't dominate completely
+      // Neglect Index v2: (Severity/5) * (1 - %Funded) * log10(1 + Requirements/$1M)
+      // Uses FTS requirements (available for all countries) instead of CBPF targeted people
+      // (only 23 CBPFs). This prevents non-CBPF countries like Lebanon from scoring 0.
       const severityNorm = entry.severityIndex / 5;
+      const requirementsInMillions = (overallFundingData?.totalRequirements ?? 0) / 1_000_000;
       const neglectIndex =
-        severityNorm * (1 - percentFunded) * Math.log10(1 + targetedPeople);
+        severityNorm * (1 - percentFunded) * Math.log10(1 + requirementsInMillions);
 
       // Funding Gap Per Capita
       const fundingGapPerCapita =
@@ -492,8 +537,11 @@ export function aggregateAllData(): AggregatedData {
   const globalStats: GlobalStats = {
     totalRequirements: 0,
     totalFunding: 0,
+    totalOffAppealFunding: 0,
+    totalFundingAll: 0,
     totalCBPFAllocations: 0,
     percentFunded: 0,
+    percentFundedAll: 0,
     countriesInCrisis: new Set(severity.map((s) => s.iso3)).size,
     activeCrisisCount: crises.length,
   };
@@ -501,6 +549,8 @@ export function aggregateAllData(): AggregatedData {
     if (c.overallFunding) {
       globalStats.totalRequirements += c.overallFunding.totalRequirements;
       globalStats.totalFunding += c.overallFunding.totalFunding;
+      globalStats.totalOffAppealFunding += c.overallFunding.offAppealFunding;
+      globalStats.totalFundingAll += c.overallFunding.totalFundingAll;
     }
     if (c.crisisAllocations) {
       globalStats.totalCBPFAllocations += c.crisisAllocations.totalAllocations;
@@ -509,6 +559,10 @@ export function aggregateAllData(): AggregatedData {
   globalStats.percentFunded =
     globalStats.totalRequirements > 0
       ? Math.round((globalStats.totalFunding / globalStats.totalRequirements) * 100)
+      : 0;
+  globalStats.percentFundedAll =
+    globalStats.totalRequirements > 0
+      ? Math.round((globalStats.totalFundingAll / globalStats.totalRequirements) * 100)
       : 0;
 
   return { countries, geoData, crises, globalStats };

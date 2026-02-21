@@ -11,7 +11,7 @@ import {
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Separator } from "@/components/ui/separator";
-import { AlertTriangle, TrendingDown, TrendingUp, DollarSign } from "lucide-react";
+import { AlertTriangle, TrendingDown, TrendingUp } from "lucide-react";
 import { formatDollars } from "@/lib/utils";
 
 function getSeverityColorClass(index: number): string {
@@ -192,16 +192,16 @@ export default function CrisisModal() {
                       />
                     </div>
 
-                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+                    <div className="flex items-center gap-3 text-[11px] text-muted-foreground flex-wrap">
                       <span>
-                        Gap/Capita:{" "}
-                        <strong className="text-foreground">
-                           ${country.fundingGapPerCapita.toFixed(1)}
+                        Sev:{" "}
+                        <strong className={getSeverityColorClass(country.severityIndex)}>
+                          {country.severityIndex.toFixed(1)}
                         </strong>
                       </span>
                       {percentFunded !== null && (
                         <span>
-                          Funded:{" "}
+                          On-appeal:{" "}
                           <strong
                             className={
                               percentFunded < 50
@@ -210,6 +210,22 @@ export default function CrisisModal() {
                             }
                           >
                             {percentFunded.toFixed(0)}%
+                          </strong>
+                        </span>
+                      )}
+                      {country.overallFunding && country.overallFunding.offAppealFunding > 0 && (
+                        <span>
+                          All:{" "}
+                          <strong className="text-cyan-400/70">
+                            {country.overallFunding.percentFundedAll.toFixed(0)}%
+                          </strong>
+                        </span>
+                      )}
+                      {country.overallFunding && (
+                        <span>
+                          Gap:{" "}
+                          <strong className="text-red-400">
+                            {formatDollars(Math.max(0, country.overallFunding.totalRequirements - country.overallFunding.totalFunding))}
                           </strong>
                         </span>
                       )}

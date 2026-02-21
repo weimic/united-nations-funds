@@ -5,8 +5,8 @@ import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { OrbitControls, Stars } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState } from "react";
 import * as THREE from "three";
-import { createLandMask, getFeatureCentroid } from "@/lib/geo-utils";
-import type { GeoData, GeoFeature } from "@/lib/types";
+import { createLandMask, getFeatureCentroid, getSeverityColor } from "@/lib/geo-utils";
+import type { GeoData, GeoFeature, OverallFunding } from "@/lib/types";
 import { useAppContext } from "@/lib/app-context";
 import { formatDollars } from "@/lib/utils";
 
@@ -29,7 +29,10 @@ type ActiveThreat = {
   lon: number;
   magnitude: number;
   totalFunding: number;
+  offAppealFunding: number;
+  totalFundingAll: number;
   percentFunded: number;
+  percentFundedAll: number;
 };
 
 type HoveredSpike = {
@@ -37,7 +40,10 @@ type HoveredSpike = {
   y: number;
   countryName: string;
   totalFunding: number;
+  offAppealFunding: number;
+  totalFundingAll: number;
   percentFunded: number;
+  percentFundedAll: number;
 };
 
 function latLongToVector3(lat: number, lon: number, radius: number): THREE.Vector3 {
@@ -59,10 +65,11 @@ function angularDistance(a: THREE.Vector3, b: THREE.Vector3): number {
 /**
  * Build funding spikes from real country data.
  * Selects up to 60 countries with the largest requirements, then scales spike
- * height by totalFunding so taller = more absolute dollars received.
+ * height by funding gap (requirements - on-appeal funding) so taller = bigger shortfall.
+ * Color is driven by % funded: deep red = severely underfunded, orange = partially funded.
  */
 function buildThreatsFromData(
-  countries: Record<string, { name: string; overallFunding: { totalRequirements: number; totalFunding: number; percentFunded: number } | null }>,
+  countries: Record<string, { name: string; overallFunding: OverallFunding | null }>,
   features: GeoFeature[]
 ): ActiveThreat[] {
   const centroidMap = new Map<string, [number, number]>();
@@ -84,35 +91,65 @@ function buildThreatsFromData(
       iso3,
       country: c,
       centroid: centroidMap.get(iso3)!,
+      fundingGap: Math.max(0, c.overallFunding!.totalRequirements - c.overallFunding!.totalFunding),
     }))
-    .sort((a, b) => b.country.overallFunding!.totalRequirements - a.country.overallFunding!.totalRequirements)
+    .sort((a, b) => b.fundingGap - a.fundingGap)
     .slice(0, 60);
 
   if (entries.length === 0) return [];
 
-  // Spike height represents totalFunding \u2014 sort + normalize by funding
-  entries.sort((a, b) => b.country.overallFunding!.totalFunding - a.country.overallFunding!.totalFunding);
-  const maxFunding = Math.max(...entries.map(e => e.country.overallFunding!.totalFunding), 1);
+  // Spike height represents funding gap \u2014 sort + normalize by funding
+  const maxGap = Math.max(...entries.map(e => e.fundingGap), 1);
 
-  return entries.map(({ iso3, country, centroid }) => ({
+  return entries.map(({ iso3, country, centroid, fundingGap }) => ({
     id: iso3,
     countryName: country.name,
     lat: centroid[0],
     lon: centroid[1],
-    magnitude: Math.max(0.05, country.overallFunding!.totalFunding / maxFunding),
+    magnitude: Math.max(0.05, fundingGap / maxGap),
     totalFunding: country.overallFunding!.totalFunding,
+    offAppealFunding: country.overallFunding!.offAppealFunding,
+    totalFundingAll: country.overallFunding!.totalFundingAll,
     percentFunded: country.overallFunding!.percentFunded,
+    percentFundedAll: country.overallFunding!.percentFundedAll,
   }));
 }
 
-function buildMockSeverityZones(): SeverityZone[] {
-  return [
-    { lat: 34.5, lon: 69.2, radius: 18, intensity: 1.0, color: new THREE.Color("#7f1d1d") },
-    { lat: 15.5, lon: 32.5, radius: 20, intensity: 0.75, color: new THREE.Color("#7c2d12") },
-    { lat: 49.0, lon: 31.3, radius: 14, intensity: 0.85, color: new THREE.Color("#b45309") },
-    { lat: 9.1, lon: 7.4, radius: 12, intensity: 0.6, color: new THREE.Color("#9f1239") },
-    { lat: -6.2, lon: 35.1, radius: 10, intensity: 0.45, color: new THREE.Color("#92400e") },
-  ];
+function buildSeverityZonesFromData(
+  countries: Record<string, { severity: { severityIndex: number } | null }>,
+  features: GeoFeature[]
+): SeverityZone[] {
+  const centroidMap = new Map<string, [number, number]>();
+  for (const feature of features) {
+    if (!feature.id) continue;
+    const [lat, lon] = getFeatureCentroid(feature.geometry);
+    if (Number.isFinite(lat) && Number.isFinite(lon)) {
+      centroidMap.set(feature.id, [lat, lon]);
+    }
+  }
+
+  const zones = Object.entries(countries)
+    .filter(([iso3, c]) => c.severity && centroidMap.has(iso3))
+    .map(([iso3, c]) => ({
+      iso3,
+      severity: c.severity!.severityIndex,
+      centroid: centroidMap.get(iso3)!,
+    }))
+    .sort((a, b) => b.severity - a.severity)
+    .filter((d) => d.severity >= 3.0)
+    .slice(0, 25)
+    .map(({ severity, centroid }) => {
+      const t = THREE.MathUtils.clamp(severity / 5, 0, 1);
+      return {
+        lat: centroid[0],
+        lon: centroid[1],
+        radius: 6 + t * 18,
+        intensity: 0.25 + t * 0.75,
+        color: getSeverityColor(severity),
+      };
+    });
+
+  return zones;
 }
 
 function LandmassDots({ geoData, severityZones }: { geoData: GeoData; severityZones: SeverityZone[] }) {
@@ -301,8 +338,10 @@ function ThreatSpikes({
 
       meshRef.current.setMatrixAt(i, helper.matrix);
 
-      // Color: pale orange (low funded) → deep red (high funded)
-      const color = new THREE.Color("#ff8c42").lerp(new THREE.Color("#ff0000"), threat.magnitude);
+      // Color by % funded: deep red (< 30%) → orange (30-60%) → amber (60%+)
+      // Low % funded = more underfunded = deeper red
+      const pctNorm = THREE.MathUtils.clamp(threat.percentFunded / 100, 0, 1);
+      const color = new THREE.Color("#ff1a1a").lerp(new THREE.Color("#ff8c42"), pctNorm);
       meshRef.current.setColorAt(i, color);
     }
 
@@ -333,17 +372,17 @@ function ThreatSpikes({
 
 function GlobeCore({
   geoData,
+  severityZones,
   threats,
   onSpikeHover,
   onSpikeLeave,
 }: {
   geoData: GeoData;
+  severityZones: SeverityZone[];
   threats: ActiveThreat[];
   onSpikeHover: (instanceId: number, x: number, y: number) => void;
   onSpikeLeave: () => void;
 }) {
-  const severityZones = useMemo(() => buildMockSeverityZones(), []);
-
   // FIX: removed auto-rotate useFrame — globe is now orbit-control only
 
   return (
@@ -381,10 +420,24 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
     [data.countries, geoData.features]
   );
 
+  const severityZones = useMemo(
+    () => buildSeverityZonesFromData(data.countries, geoData.features),
+    [data.countries, geoData.features]
+  );
+
   const handleSpikeHover = (instanceId: number, x: number, y: number) => {
     const threat = threats[instanceId];
     if (!threat) return;
-    setTooltip({ x, y, countryName: threat.countryName, totalFunding: threat.totalFunding, percentFunded: threat.percentFunded });
+    setTooltip({
+      x,
+      y,
+      countryName: threat.countryName,
+      totalFunding: threat.totalFunding,
+      offAppealFunding: threat.offAppealFunding,
+      totalFundingAll: threat.totalFundingAll,
+      percentFunded: threat.percentFunded,
+      percentFundedAll: threat.percentFundedAll,
+    });
   };
 
   const handleSpikeLeave = () => setTooltip(null);
@@ -398,6 +451,7 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
       >
         <GlobeCore
           geoData={geoData}
+          severityZones={severityZones}
           threats={threats}
           onSpikeHover={handleSpikeHover}
           onSpikeLeave={handleSpikeLeave}
@@ -426,8 +480,13 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
         >
           <p className="text-[12px] font-semibold font-mono text-cyan-100 mb-1">{tooltip.countryName}</p>
           <p className="text-[11px] font-mono text-cyan-400">
-            Funded: {formatDollars(tooltip.totalFunding)}
+            Funded (on-appeal): {formatDollars(tooltip.totalFunding)}
           </p>
+          {tooltip.offAppealFunding > 0 && (
+            <p className="text-[10px] font-mono text-muted-foreground">
+              Off-appeal: {formatDollars(tooltip.offAppealFunding)} (all-rows: {tooltip.percentFundedAll.toFixed(0)}%)
+            </p>
+          )}
           <p className="text-[10px] font-mono text-muted-foreground">
             {Number.isFinite(tooltip.percentFunded)
               ? `${tooltip.percentFunded.toFixed(0)}% of requirements`
