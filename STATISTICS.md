@@ -151,6 +151,8 @@ The stated goal (AGENT.md) is to *"help the UN analyze, compare, and revise budg
 | Funding gap display in sidebar | ✅ Working | Progress bars, stat cards, gap metric |
 | CBPF cluster breakdown | ✅ Working | Per-cluster chart for country/crisis views |
 | Scatter plot (severity vs. % funded) | ✅ Working | Country name in tooltip (fixed); margin clipping fixed |
+| Neglect Index v2 (requirements-based) | ✅ Done | Uses FTS requirements so non-CBPF countries are scored credibly |
+| Underlooked rankings (countries + crises) | ✅ Done | Global tab includes country-level and crisis-level underlooked sections |
 | Globe spikes (real data) | ✅ Fixed | Height now proportional to absolute funding received |
 | Globe land dots | ✅ Fixed | `vertexColors` root cause resolved |
 | Globe severity glows (real data) | ✅ Done | INFORM severity drives centroid-based glow zones (top severity countries) |
@@ -166,13 +168,8 @@ The glow zones are now computed from country centroids and INFORM severity (top 
 **2. Appeal-level structure is not visualized.**
 Some countries have multiple simultaneous plan lines (for example, an urgent “flash appeal” plus a separate regional refugee plan line). Regional plans (multi-country refugee/migration plans) also behave differently than single-country plans. Collapsing everything into a single country-level “% funded” can hide within-country imbalances that matter for revision decisions.
 
-**3. The Neglect Index formula has a coverage flaw.**
-$$\text{Neglect Index} = \frac{\text{Severity}}{5} \times (1 - \text{\%Funded}) \times \log_{10}(1 + \text{Targeted People})$$
-
-`Targeted People` comes from the CBPF dataset, which covers only 23 CBPFs. The 80+ countries in FTS without a CBPF entry get `Targeted People = 0`, yielding a `neglectIndex = 0` regardless of severity or funding gap. Lebanon, which is the most neglected large crisis, would score **zero** on this index because it lacks CBPF cluster data. The formula systematically under-identifies the crises it was designed to surface.
-
-**4. Bubble size in the Severity vs. Funding Disparity scatter plot uses raw `requirements`.**
-The chart uses bubble size to represent “how big the crisis is” (requirements). But requirements vary by hundreds of times between countries, so small and medium crises become hard to see. Switching to a **log-scale bubble size** (a scale that compresses very large numbers) makes the chart readable while still reflecting magnitude.
+**3. Crisis-level aggregation can overlap across crises.**
+The INFORM dataset is structured as **(crisis × country)** entries, and a single country can appear in multiple crises. Any crisis-level totals that sum country requirements/funding will therefore **overlap across crises**. This is acceptable for ranking/triage, but it matters if a future view tries to interpret crisis totals as globally additive.
 
 ---
 
@@ -194,7 +191,7 @@ This aligns with expert humanitarian consensus on which crises are structurally 
 
 ---
 
-## 5. Verified "Underlooked" Crises (Data-Backed)
+## 5. Verified “Underlooked” Countries (Data-Backed)
 
 | Country | Req ($B) | % Funded | CBPF Reach | Key Finding |
 |---------|---------|----------|------------|-------------|
@@ -223,7 +220,8 @@ This aligns with expert humanitarian consensus on which crises are structurally 
 
 4. **Show delivery rate directly in the CBPF sector chart.** Add a visible “% reached” (people reached divided by people targeted). The dataset contains multiple “0 reached” situations with meaningful allocations (for example, allocations in Health/Water/Sanitation sectors with zero reported reach), and the UI should make these easy to spot.
 
-5. **Use a log-scale bubble size in the severity scatter plot.** Requirements vary by orders of magnitude, so a linear bubble size hides most countries. Use a logarithmic sizing approach so both large and medium crises remain visible.
+5. **Use a log-scale bubble size in the severity scatter plot.** ✅ Implemented
+	Requirements vary by orders of magnitude, so a linear bubble size hides most countries. The Global scatter now uses a log-scale bubble sizing so both large and medium crises remain visible.
 
 6. **Add a “Delivery” tab for CBPF performance.** Rank CBPFs by reach ratio and by allocations with “0 reached” flags, and add a cluster-level view to identify systemic delivery bottlenecks.
 
@@ -256,10 +254,15 @@ This aligns with expert humanitarian consensus on which crises are structurally 
 		- % funded (on-appeal) and % funded (all rows)
 		- which plan lines exist (country plan vs regional plan vs flash appeal)
 
-3. **Ranked table: “Underlooked crises (severity-adjusted)”**
-	- Metric: Neglect v2 from Section 4
-	- Columns: severity, on-appeal % funded, requirements, gap, off-appeal share
-	- This is how analysts quickly find “high severity + big gap” outliers (e.g., Turkey/Colombia/Lebanon/Mali/Ethiopia as the data currently indicates).
+3. **Ranked tables: “Underlooked Countries” and “Underlooked Crises”** ✅ Implemented (core)
+	- **Underlooked Countries (Severity-Adjusted)**
+		- Metric: Neglect v2 from Section 4 (country-level)
+		- Display: severity, on-appeal % funded, gap, off-appeal share (where relevant)
+	- **Underlooked Crises (Crisis-Level)**
+		- Aggregation: sum requirements + funding across all countries in the crisis
+		- Metric: $\text{Crisis Neglect Index} = \frac{\max(\text{Severity})}{5} \times (1 - \text{\%Funded}) \times \log_{10}(1 + \frac{\text{Total Requirements}}{10^6})$
+		- Display: countries count, max severity, % funded, and total gap
+	- Interpretation note: crisis totals can overlap if a country belongs to multiple crises.
 
 ### B) Country detail (where analysts validate and explain a discrepancy)
 1. **Appeal breakdown panel** (country → multiple appeal rows)
