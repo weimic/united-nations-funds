@@ -2,6 +2,7 @@
 
 /** INFORM severity record per crisis per country */
 export interface InformSeverity {
+  year?: number;
   crisisName: string;
   crisisId: string;
   country: string;
@@ -15,6 +16,7 @@ export interface InformSeverity {
 
 /** Overall country-level funding from FTS */
 export interface OverallFunding {
+  year?: number;
   countryCode: string; // ISO Alpha-3
   totalRequirements: number;
   totalFunding: number;
@@ -23,6 +25,7 @@ export interface OverallFunding {
 
 /** Specific crisis allocation per country per cluster */
 export interface CrisisAllocation {
+  year?: number;
   cbpfName: string; // e.g. "Afghanistan", "Burkina Faso (RhPF-WCA)"
   parsedCountryName: string; // extracted country name
   iso3: string; // mapped ISO3
@@ -51,6 +54,11 @@ export interface UnifiedCountryData {
   severity: InformSeverity | null;
   overallFunding: OverallFunding | null;
   crisisAllocations: CrisisCountryAllocation | null;
+  historicalData?: Record<number, {
+    severity: InformSeverity | null;
+    overallFunding: OverallFunding | null;
+    crisisAllocations: CrisisCountryAllocation | null;
+  }>;
 }
 
 /** Crisis-level data grouping countries */
@@ -58,6 +66,28 @@ export interface CrisisData {
   crisisName: string;
   crisisId: string;
   countries: CrisisCountryEntry[];
+  categories: string[];
+  historicalData?: Record<number, {
+    countries: CrisisCountryEntry[];
+  }>;
+}
+
+/** Global aggregate statistics */
+export interface GlobalStats {
+  totalRequirements: number;
+  totalFunding: number;
+  totalCBPFAllocations: number;
+  percentFunded: number;
+  countriesInCrisis: number;
+  activeCrisisCount: number;
+  historicalData?: Record<number, {
+    totalRequirements: number;
+    totalFunding: number;
+    totalCBPFAllocations: number;
+    percentFunded: number;
+    countriesInCrisis: number;
+    activeCrisisCount: number;
+  }>;
 }
 
 /** A country entry within a crisis context */
@@ -95,7 +125,7 @@ export interface GeoData {
 export interface AppState {
   activeCrisis: CrisisData | null;
   selectedCountry: string | null; // ISO3
-  sidebarTab: "crises" | "countries";
+  sidebarTab: "crises" | "countries" | "global";
 }
 
 /** Serializable data for client components */
@@ -103,4 +133,5 @@ export interface SerializedData {
   countries: Record<string, UnifiedCountryData>;
   crises: CrisisData[];
   geoData: GeoData;
+  globalStats: GlobalStats;
 }

@@ -11,6 +11,7 @@ import type {
   CrisisCountryEntry,
   UnifiedCountryData,
   GeoData,
+  GlobalStats,
   SerializedData,
 } from "./types";
 
@@ -300,6 +301,7 @@ export interface AggregatedData {
   countries: Map<string, UnifiedCountryData>;
   crises: CrisisData[];
   geoData: GeoData;
+  globalStats: GlobalStats;
 }
 
 export function aggregateAllData(): AggregatedData {
@@ -404,17 +406,67 @@ export function aggregateAllData(): AggregatedData {
     // Sort by underfunded score descending (most underfunded first)
     crisisCountries.sort((a, b) => b.underfundedScore - a.underfundedScore);
 
+    // Derive normalized categories from crisis name + drivers fields
+    const categorySet = new Set<string>();
+    const nameAndDrivers = [crisisName, ...crisisCountries.map(e => e.drivers)].join(" ");
+    const lower = nameAndDrivers.toLowerCase();
+
+    if (/conflict|armed|war|violence|attack|militant|rebel|coup|fighting|hostil/.test(lower)) categorySet.add("Conflict");
+    if (/food|hunger|famine|malnutrit|starv|food insecurity/.test(lower)) categorySet.add("Food Crisis");
+    if (/drought|dry/.test(lower)) categorySet.add("Drought");
+    if (/flood|cyclone|typhoon|hurricane|storm|tsunami/.test(lower)) categorySet.add("Natural Disaster");
+    if (/earthquake|volcanic|eruption|landslide/.test(lower)) categorySet.add("Natural Disaster");
+    if (/displace|refugee|idp|migration|forced movement/.test(lower)) categorySet.add("Displacement");
+    if (/disease|epidemic|pandemic|health|cholera|malaria|ebola|outbreak/.test(lower)) categorySet.add("Disease");
+    if (/economic|financial|poverty|inflation|livelihood/.test(lower)) categorySet.add("Economic Crisis");
+    if (/political|governance|instability|crisis governance/.test(lower)) categorySet.add("Political Crisis");
+    if (/climate|climatic|environment|deforestation/.test(lower)) categorySet.add("Climate");
+
+    // Fallback: use raw driver tokens if nothing matched
+    if (categorySet.size === 0) {
+      for (const entry of crisisCountries) {
+        if (entry.drivers) {
+          entry.drivers.split(/[;,]/).map((t) => t.trim()).filter(Boolean).forEach(t => categorySet.add(t));
+        }
+      }
+    }
+    const categories = [...categorySet];
+
     crises.push({
       crisisName,
       crisisId,
       countries: crisisCountries,
+      categories,
     });
   }
 
   // Sort crises by name
   crises.sort((a, b) => a.crisisName.localeCompare(b.crisisName));
 
-  return { countries, geoData, crises };
+  // Compute global stats
+  const globalStats: GlobalStats = {
+    totalRequirements: 0,
+    totalFunding: 0,
+    totalCBPFAllocations: 0,
+    percentFunded: 0,
+    countriesInCrisis: new Set(severity.map((s) => s.iso3)).size,
+    activeCrisisCount: crises.length,
+  };
+  for (const [, c] of countries) {
+    if (c.overallFunding) {
+      globalStats.totalRequirements += c.overallFunding.totalRequirements;
+      globalStats.totalFunding += c.overallFunding.totalFunding;
+    }
+    if (c.crisisAllocations) {
+      globalStats.totalCBPFAllocations += c.crisisAllocations.totalAllocations;
+    }
+  }
+  globalStats.percentFunded =
+    globalStats.totalRequirements > 0
+      ? Math.round((globalStats.totalFunding / globalStats.totalRequirements) * 100)
+      : 0;
+
+  return { countries, geoData, crises, globalStats };
 }
 
 export function serializeData(data: AggregatedData): SerializedData {
@@ -426,5 +478,6 @@ export function serializeData(data: AggregatedData): SerializedData {
     countries,
     crises: data.crises,
     geoData: data.geoData,
+    globalStats: data.globalStats,
   };
 }

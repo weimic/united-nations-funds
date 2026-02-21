@@ -13,13 +13,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { AlertTriangle, TrendingDown, TrendingUp, DollarSign } from "lucide-react";
-
-function formatDollars(n: number): string {
-  if (n >= 1_000_000_000) return `$${(n / 1_000_000_000).toFixed(2)}B`;
-  if (n >= 1_000_000) return `$${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `$${(n / 1_000).toFixed(0)}K`;
-  return `$${n.toFixed(0)}`;
-}
+import { formatDollars } from "@/lib/utils";
 
 function getSeverityColorClass(index: number): string {
   if (index >= 4) return "text-red-400";
@@ -42,7 +36,6 @@ export default function CrisisModal() {
     crisisModalOpen,
     setCrisisModalOpen,
     setSelectedCountryIso3,
-    data,
   } = useAppContext();
 
   // Sort countries: most underfunded first
