@@ -10,7 +10,6 @@ import {
   DialogDescription,
 } from "@/components/ui/dialog";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { AlertTriangle, TrendingDown, TrendingUp, DollarSign } from "lucide-react";
 import { formatDollars } from "@/lib/utils";
@@ -23,9 +22,9 @@ function getSeverityColorClass(index: number): string {
   return "text-slate-400";
 }
 
-function getUnderfundedBarColor(score: number): string {
-  if (score >= 3.5) return "bg-red-500";
-  if (score >= 2.5) return "bg-orange-500";
+function getNeglectColor(score: number): string {
+  if (score >= 5) return "bg-red-500";
+  if (score >= 3) return "bg-orange-500";
   if (score >= 1.5) return "bg-amber-500";
   return "bg-blue-500";
 }
@@ -38,13 +37,14 @@ export default function CrisisModal() {
     setSelectedCountryIso3,
   } = useAppContext();
 
-  // Sort countries: most underfunded first
+  // Sort countries: most neglected first
   const sortedCountries = useMemo(() => {
     if (!activeCrisis) return [];
     return [...activeCrisis.countries].sort(
-      (a, b) => b.underfundedScore - a.underfundedScore
+      (a, b) => b.neglectIndex - a.neglectIndex
     );
   }, [activeCrisis]);
+
 
   // Aggregate stats
   const stats = useMemo(() => {
@@ -64,7 +64,7 @@ export default function CrisisModal() {
     const avgSeverity =
       sortedCountries.reduce((s, c) => s + c.severityIndex, 0) /
       sortedCountries.length;
-    const maxUnderfunded = sortedCountries[0]?.underfundedScore || 0;
+    const maxNeglect = sortedCountries[0]?.neglectIndex || 0;
     const percentFunded =
       totalRequirements > 0 ? (totalFunding / totalRequirements) * 100 : 0;
 
@@ -73,7 +73,7 @@ export default function CrisisModal() {
       totalFunding,
       totalCBPF,
       avgSeverity,
-      maxUnderfunded,
+      maxNeglect,
       percentFunded,
       gap: totalRequirements - totalFunding,
     };
@@ -92,7 +92,7 @@ export default function CrisisModal() {
           <DialogDescription className="text-muted-foreground text-sm">
             {sortedCountries.length} affected countr
             {sortedCountries.length === 1 ? "y" : "ies"} — ranked by
-            underfunded severity
+            Neglect Index
           </DialogDescription>
         </DialogHeader>
 
@@ -142,8 +142,9 @@ export default function CrisisModal() {
             {sortedCountries.map((country, idx) => {
               const percentFunded =
                 country.overallFunding?.percentFunded ?? null;
-              const underfundedPct = Math.min(
-                (country.underfundedScore / 5) * 100,
+              // Neglect index scale roughly 0-8, so divide by 8 for bar width
+              const neglectPct = Math.min(
+                (country.neglectIndex / 8) * 100,
                 100
               );
 
@@ -168,38 +169,35 @@ export default function CrisisModal() {
                         {country.countryName}
                       </span>
                       <div className="flex items-center gap-1.5 shrink-0">
-                        {country.underfundedScore >= 3.0 ? (
+                        {country.neglectIndex >= 4.0 ? (
                           <TrendingDown className="h-3.5 w-3.5 text-red-400" />
                         ) : (
                           <TrendingUp className="h-3.5 w-3.5 text-green-400" />
                         )}
                         <span
-                          className={`text-xs font-bold ${getSeverityColorClass(
-                            country.underfundedScore
-                          )}`}
+                          className={`text-xs font-bold`}
                         >
-                          {country.underfundedScore.toFixed(2)}
+                          Index: {country.neglectIndex.toFixed(2)}
                         </span>
                       </div>
                     </div>
 
-                    {/* Underfunded bar */}
+                    {/* Neglect bar */}
                     <div className="h-1.5 rounded-full bg-muted/50 overflow-hidden mb-1.5">
                       <div
-                        className={`h-full rounded-full transition-all ${getUnderfundedBarColor(
-                          country.underfundedScore
+                        className={`h-full rounded-full transition-all ${getNeglectColor(
+                          country.neglectIndex
                         )}`}
-                        style={{ width: `${underfundedPct}%` }}
+                        style={{ width: `${neglectPct}%` }}
                       />
                     </div>
 
                     <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
                       <span>
-                        Severity:{" "}
-                        <strong className={getSeverityColorClass(country.severityIndex)}>
-                          {country.severityIndex.toFixed(1)}
-                        </strong>{" "}
-                        ({country.severityCategory})
+                        Gap/Capita:{" "}
+                        <strong className="text-foreground">
+                           ${country.fundingGapPerCapita.toFixed(1)}
+                        </strong>
                       </span>
                       {percentFunded !== null && (
                         <span>
@@ -215,14 +213,11 @@ export default function CrisisModal() {
                           </strong>
                         </span>
                       )}
-                      {country.crisisAllocation && (
+                      {country.reachRatio > 0 && (
                         <span className="flex items-center gap-0.5">
-                          <DollarSign className="h-3 w-3" />
-                          CBPF:{" "}
-                          <strong className="text-cyan-400">
-                            {formatDollars(
-                              country.crisisAllocation.totalAllocations
-                            )}
+                          Reach:{" "}
+                          <strong className={country.reachRatio < 50 ? "text-orange-400" : "text-cyan-400"}>
+                            {country.reachRatio.toFixed(0)}%
                           </strong>
                         </span>
                       )}

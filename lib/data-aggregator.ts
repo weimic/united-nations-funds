@@ -15,6 +15,8 @@ import type {
   SerializedData,
 } from "./types";
 
+const TARGET_YEAR = 2025;
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 /** Load GeoJSON and build lookup maps */
@@ -194,6 +196,9 @@ function parseOverallFunding(): OverallFunding[] {
   >();
 
   for (const row of parsed.data as Record<string, string>[]) {
+    // Filter for target year
+    if (row.year && parseInt(row.year) !== TARGET_YEAR) continue;
+
     // Skip the HXL tag row
     if (
       row.countryCode?.startsWith("#") ||
@@ -237,6 +242,9 @@ function parseCrisisAllocations(
   const allocations: CrisisAllocation[] = [];
 
   for (const row of parsed.data as Record<string, string>[]) {
+    // Filter for target year
+    if (row.Year && parseInt(row.Year) !== TARGET_YEAR) continue;
+
     const cbpfName = row["CBPF Name"];
     if (!cbpfName) continue;
 
@@ -382,14 +390,47 @@ export function aggregateAllData(): AggregatedData {
 
       // Calculate underfunded score: higher severity + lower funding = higher score
       let underfundedScore = 0;
+      let percentFunded = 0;
+      let fundingGap = 0;
+      let totalFunding = 0;
+      
+      if (overallFundingData) {
+        percentFunded = overallFundingData.percentFunded / 100; // 0-1
+        totalFunding = overallFundingData.totalFunding;
+        fundingGap = Math.max(0, overallFundingData.totalRequirements - overallFundingData.totalFunding);
+      }
+
       if (overallFundingData && overallFundingData.percentFunded > 0) {
         // Normalize: severity (0-5) * (1 - percentFunded/100)
         underfundedScore =
-          entry.severityIndex * (1 - Math.min(overallFundingData.percentFunded, 100) / 100);
+          entry.severityIndex * (1 - percentFunded);
       } else {
         // No funding data = assume max underfunding at this severity
         underfundedScore = entry.severityIndex;
       }
+
+      // New Metrics
+      const targetedPeople = crisisAllocation?.totalTargetedPeople || 0;
+      const reachedPeople = crisisAllocation?.totalReachedPeople || 0;
+      const cbpfAllocations = crisisAllocation?.totalAllocations || 0;
+
+      // Neglect Index: (Severity/5) * (1 - %Funded) * log10(1 + TargetedPeople)
+      // Log scale for people ensures magnitude matters but doesn't dominate completely
+      const severityNorm = entry.severityIndex / 5;
+      const neglectIndex =
+        severityNorm * (1 - percentFunded) * Math.log10(1 + targetedPeople);
+
+      // Funding Gap Per Capita
+      const fundingGapPerCapita =
+        targetedPeople > 0 ? fundingGap / targetedPeople : 0;
+
+      // Reach Ratio
+      const reachRatio =
+        targetedPeople > 0 ? (reachedPeople / targetedPeople) * 100 : 0;
+
+      // CBPF Dependency
+      const cbpfDependency =
+        totalFunding > 0 ? (cbpfAllocations / totalFunding) * 100 : 0;
 
       return {
         iso3: entry.iso3,
@@ -400,11 +441,15 @@ export function aggregateAllData(): AggregatedData {
         overallFunding: overallFundingData,
         crisisAllocation,
         underfundedScore,
+        neglectIndex,
+        fundingGapPerCapita,
+        reachRatio,
+        cbpfDependency,
       };
     });
 
-    // Sort by underfunded score descending (most underfunded first)
-    crisisCountries.sort((a, b) => b.underfundedScore - a.underfundedScore);
+    // Sort by neglect index descending (most neglected first)
+    crisisCountries.sort((a, b) => b.neglectIndex - a.neglectIndex);
 
     // Derive normalized categories from crisis name + drivers fields
     const categorySet = new Set<string>();

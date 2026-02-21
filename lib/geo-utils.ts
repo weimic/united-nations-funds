@@ -152,6 +152,51 @@ export function buildCountryTexture(
 }
 
 /**
+ * Create a binary land mask (white land, black water) for point cloud generation.
+ */
+export function createLandMask(
+  geoData: GeoData,
+  width = 2048,
+  height = 1024
+): ImageData | null {
+  if (typeof document === "undefined") return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d", { willReadFrequently: true });
+  if (!ctx) return null;
+
+  ctx.fillStyle = "#000000";
+  ctx.fillRect(0, 0, width, height);
+
+  ctx.fillStyle = "#FFFFFF";
+  const lonToX = (lon: number) => ((lon + 180) / 360) * width;
+  const latToY = (lat: number) => ((90 - lat) / 180) * height;
+
+  for (const feature of geoData.features) {
+    const polys =
+      feature.geometry.type === "Polygon"
+        ? [feature.geometry.coordinates as number[][][]]
+        : (feature.geometry.coordinates as number[][][][]);
+
+    for (const poly of polys) {
+      const ring = poly[0];
+      if (ring.length < 3) continue;
+      ctx.beginPath();
+      ctx.moveTo(lonToX(ring[0][0]), latToY(ring[0][1]));
+      for (let i = 1; i < ring.length; i++) {
+        ctx.lineTo(lonToX(ring[i][0]), latToY(ring[i][1]));
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  return ctx.getImageData(0, 0, width, height);
+}
+
+/**
  * Build a glowing land-mass outline texture using canvas shadow blur.
  * Creates wispy blue-cyan halos around all country outlines.
  */

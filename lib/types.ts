@@ -101,6 +101,14 @@ export interface CrisisCountryEntry {
   crisisAllocation: CrisisCountryAllocation | null;
   /** Ratio: severity vs funding -> higher = more underfunded */
   underfundedScore: number;
+  /** Normalized score combining severity, funding gap, and magnitude of targeted people */
+  neglectIndex: number;
+  /** (Requirements - Funding) / Targeted People */
+  fundingGapPerCapita: number;
+  /** Reached People / Targeted People * 100 */
+  reachRatio: number;
+  /** CBPF Allocations / Total Funding * 100 */
+  cbpfDependency: number;
 }
 
 /** GeoJSON feature from countries.geo.json */

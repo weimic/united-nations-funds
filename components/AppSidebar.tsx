@@ -26,7 +26,6 @@ import {
   TrendingDown,
 } from "lucide-react";
 import {
-  BarChart,
   Bar,
   XAxis,
   YAxis,
@@ -36,6 +35,9 @@ import {
   Legend,
   ComposedChart,
   Line,
+  ScatterChart,
+  Scatter,
+  ZAxis,
 } from "recharts";
 import type {
   UnifiedCountryData,
@@ -67,7 +69,7 @@ function getSeverityColorClass(cat: string): string {
   }
 }
 
-function getCategoryIcon(cat: string): string {
+function getCategoryIcon(_cat: string): string {
   return "";
 }
 
@@ -89,17 +91,21 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
   const chartData = [...clusters]
     .sort((a, b) => b.totalAllocations - a.totalAllocations)
     .slice(0, 8)
-    .map((c) => ({
-      name: c.cluster.length > 14 ? c.cluster.slice(0, 14) + "…" : c.cluster,
-      cbpf: Math.round(c.totalAllocations / 1_000),
-      reached: c.reachedPeople,
-      targeted: c.targetedPeople,
-    }));
+    .map((c) => {
+      const costPerTargeted = c.targetedPeople > 0 ? c.totalAllocations / c.targetedPeople : 0;
+      const costPerReached = c.reachedPeople > 0 ? c.totalAllocations / c.reachedPeople : 0;
+      return {
+        name: c.cluster.length > 14 ? c.cluster.slice(0, 14) + "…" : c.cluster,
+        cbpf: Math.round(c.totalAllocations / 1_000),
+        costPerTargeted: Math.round(costPerTargeted * 10) / 10,
+        costPerReached: Math.round(costPerReached * 10) / 10,
+      };
+    });
 
   return (
     <div className="space-y-2 pt-1">
       <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-        CBPF Funding vs People Reached
+        CBPF Funding vs Cost Per Person
       </p>
       <div className="h-56 w-full">
         <ResponsiveContainer width="100%" height="100%">
@@ -130,13 +136,11 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
               yAxisId="right"
               orientation="right"
               tick={{ fontSize: 9, fill: "rgba(248,113,113,0.6)", fontFamily: "monospace" }}
-              tickFormatter={(v: number) =>
-                v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` :
-                v >= 1_000 ? `${(v / 1_000).toFixed(0)}K` : String(v)
-              }
+              tickFormatter={(v: number) => `$${v}`}
               tickLine={false}
               axisLine={false}
               width={46}
+              label={{ value: "$ / Person", angle: 90, position: "insideRight", offset: -30, style: { fontSize: 8, fill: "rgba(248,113,113,0.5)", fontFamily: "monospace" } }}
             />
             <Tooltip
               contentStyle={chartTooltipStyle}
@@ -145,8 +149,8 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
               formatter={(value: any, name: any) => {
                 const v = value ?? 0;
                 if (name === "cbpf") return [`$${Number(v).toLocaleString()}K`, "CBPF"];
-                if (name === "reached") return [Number(v).toLocaleString(), "Reached"];
-                if (name === "targeted") return [Number(v).toLocaleString(), "Targeted"];
+                if (name === "costPerTargeted") return [`$${Number(v).toLocaleString()}`, "Cost / Targeted"];
+                if (name === "costPerReached") return [`$${Number(v).toLocaleString()}`, "Cost / Reached"];
                 return [v, name];
               }}
             />
@@ -155,8 +159,8 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
               iconSize={8}
             />
             <Bar yAxisId="left" dataKey="cbpf" name="CBPF ($K)" fill="#12626e" radius={[3, 3, 0, 0]} opacity={0.85} />
-            <Line yAxisId="right" type="monotone" dataKey="reached" name="Reached" stroke="#f87171" strokeWidth={1.8} dot={{ r: 2.5, fill: "#f87171" }} />
-            <Line yAxisId="right" type="monotone" dataKey="targeted" name="Targeted" stroke="#00b11b" strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 2, fill: "#94a3b8" }} />
+            <Line yAxisId="right" type="monotone" dataKey="costPerReached" name="Cost / Reached" stroke="#f87171" strokeWidth={1.8} dot={{ r: 2.5, fill: "#f87171" }} />
+            <Line yAxisId="right" type="monotone" dataKey="costPerTargeted" name="Cost / Targeted" stroke="#00b11b" strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 2, fill: "#94a3b8" }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -363,12 +367,16 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
     return [...clusterMap.entries()]
       .sort((a, b) => b[1].allocations - a[1].allocations)
       .slice(0, 8)
-      .map(([name, v]) => ({
-        name: name.length > 14 ? name.slice(0, 14) + "…" : name,
-        cbpf: Math.round(v.allocations / 1_000),
-        reached: v.reached,
-        targeted: v.targeted,
-      }));
+      .map(([name, v]) => {
+        const costPerTargeted = v.targeted > 0 ? v.allocations / v.targeted : 0;
+        const costPerReached = v.reached > 0 ? v.allocations / v.reached : 0;
+        return {
+          name: name.length > 14 ? name.slice(0, 14) + "…" : name,
+          cbpf: Math.round(v.allocations / 1_000),
+          costPerTargeted: Math.round(costPerTargeted * 10) / 10,
+          costPerReached: Math.round(costPerReached * 10) / 10,
+        };
+      });
   }, [crisis, data.countries]);
 
   if (chartData.length === 0) return null;
@@ -376,7 +384,7 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
   return (
     <div className="space-y-2">
       <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-        CBPF Funding vs People Reached
+        CBPF Funding vs Cost Per Person
       </p>
       <div className="h-56 w-full">
         <ResponsiveContainer width="100%" height="100%">
@@ -409,13 +417,11 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
               yAxisId="right"
               orientation="right"
               tick={{ fontSize: 9, fill: "rgba(248,113,113,0.6)", fontFamily: "monospace" }}
-              tickFormatter={(v: number) =>
-                v >= 1_000_000 ? `${(v / 1_000_000).toFixed(1)}M` :
-                v >= 1_000 ? `${(v / 1_000).toFixed(0)}K` : String(v)
-              }
+              tickFormatter={(v: number) => `$${v}`}
               tickLine={false}
               axisLine={false}
               width={46}
+              label={{ value: "$ / Person", angle: 90, position: "insideRight", offset: -30, style: { fontSize: 8, fill: "rgba(248,113,113,0.5)", fontFamily: "monospace" } }}
             />
             <Tooltip
               contentStyle={chartTooltipStyle}
@@ -424,8 +430,8 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
               formatter={(value: any, name: any) => {
                 const v = value ?? 0;
                 if (name === "cbpf")     return [`$${Number(v).toLocaleString()}K`, "CBPF"];
-                if (name === "reached")  return [Number(v).toLocaleString(), "Reached"];
-                if (name === "targeted") return [Number(v).toLocaleString(), "Targeted"];
+                if (name === "costPerTargeted") return [`$${Number(v).toLocaleString()}`, "Cost / Targeted"];
+                if (name === "costPerReached") return [`$${Number(v).toLocaleString()}`, "Cost / Reached"];
                 return [v, name];
               }}
             />
@@ -434,8 +440,8 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
               iconSize={8}
             />
             <Bar yAxisId="left" dataKey="cbpf" name="CBPF ($K)" fill="#22d3ee" radius={[3, 3, 0, 0]} opacity={0.85} />
-            <Line yAxisId="right" type="monotone" dataKey="reached" name="Reached" stroke="#f87171" strokeWidth={1.8} dot={{ r: 2.5, fill: "#f87171" }} />
-            <Line yAxisId="right" type="monotone" dataKey="targeted" name="Targeted" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 2, fill: "#94a3b8" }} />
+            <Line yAxisId="right" type="monotone" dataKey="costPerReached" name="Cost / Reached" stroke="#f87171" strokeWidth={1.8} dot={{ r: 2.5, fill: "#f87171" }} />
+            <Line yAxisId="right" type="monotone" dataKey="costPerTargeted" name="Cost / Targeted" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 2, fill: "#94a3b8" }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -450,12 +456,11 @@ function CrisisFundingGapChart({ crisis }: { crisis: CrisisData }) {
       .filter(c => c.overallFunding && c.overallFunding.totalRequirements > 0)
       .map(c => ({
         name: c.countryName.length > 12 ? c.countryName.slice(0, 12) + "…" : c.countryName,
+        percentFunded: Math.round(c.overallFunding!.percentFunded),
+        severity: c.severityIndex,
         requirements: Math.round((c.overallFunding?.totalRequirements ?? 0) / 1_000_000),
-        funded: Math.round((c.overallFunding?.totalFunding ?? 0) / 1_000_000),
-        gap: Math.round(((c.overallFunding?.totalRequirements ?? 0) - (c.overallFunding?.totalFunding ?? 0)) / 1_000_000),
-        severity: c.severityIndex
       }))
-      .sort((a, b) => b.gap - a.gap)
+      .sort((a, b) => b.severity - a.severity)
       .slice(0, 8);
   }, [crisis]);
 
@@ -464,13 +469,13 @@ function CrisisFundingGapChart({ crisis }: { crisis: CrisisData }) {
   return (
     <div className="space-y-2">
       <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-        Funding Gap by Country ($M)
+        Funding % vs Severity
       </p>
       <div className="h-56 w-full">
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartData}
-            margin={{ top: 12, right: 12, bottom: 72, left: 12 }}
+            margin={{ top: 12, right: 46, bottom: 72, left: 12 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
             <XAxis
@@ -483,18 +488,31 @@ function CrisisFundingGapChart({ crisis }: { crisis: CrisisData }) {
               axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
             />
             <YAxis
+              yAxisId="left"
               tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-              tickFormatter={(v: number) => `$${v}M`}
+              tickFormatter={(v: number) => `${v}%`}
               tickLine={false}
               axisLine={false}
               width={40}
+              domain={[0, 100]}
+            />
+            <YAxis
+              yAxisId="right"
+              orientation="right"
+              tick={{ fontSize: 9, fill: "rgba(248,113,113,0.6)", fontFamily: "monospace" }}
+              tickLine={false}
+              axisLine={false}
+              width={40}
+              domain={[0, 5]}
+              label={{ value: "Severity", angle: 90, position: "insideRight", offset: -20, style: { fontSize: 8, fill: "rgba(248,113,113,0.5)", fontFamily: "monospace" } }}
             />
             <Tooltip
               contentStyle={chartTooltipStyle}
               labelStyle={chartLabelStyle}
-              formatter={(value: any, name: any) => {
-                if (name === "gap") return [`$${value}M`, "Funding Gap"];
-                if (name === "funded") return [`$${value}M`, "Funded"];
+              formatter={(value: number | string | undefined, name: string | undefined) => {
+                if (value === undefined || name === undefined) return ["", name || ""];
+                if (name === "percentFunded") return [`${value}%`, "% Funded"];
+                if (name === "severity" && typeof value === "number") return [value.toFixed(1), "Severity"];
                 if (name === "requirements") return [`$${value}M`, "Requirements"];
                 return [value, name];
               }}
@@ -503,8 +521,8 @@ function CrisisFundingGapChart({ crisis }: { crisis: CrisisData }) {
               wrapperStyle={{ fontSize: 9, fontFamily: "monospace", color: "rgba(0,200,255,0.5)", paddingTop: 4 }}
               iconSize={8}
             />
-            <Bar dataKey="funded" stackId="a" name="Funded" fill="#12626e" radius={[0, 0, 0, 0]} opacity={0.85} />
-            <Bar dataKey="gap" stackId="a" name="Gap" fill="#991b1b" radius={[3, 3, 0, 0]} opacity={0.85} />
+            <Bar yAxisId="left" dataKey="percentFunded" name="% Funded" fill="#12626e" radius={[3, 3, 0, 0]} opacity={0.85} />
+            <Line yAxisId="right" type="monotone" dataKey="severity" name="Severity" stroke="#f87171" strokeWidth={2} dot={{ r: 3, fill: "#f87171" }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -522,9 +540,9 @@ function CrisisDetailView({ crisis, onBack }: { crisis: CrisisData; onBack: () =
   const gap = totalReq - totalFund;
   const pct = totalReq > 0 ? (totalFund / totalReq) * 100 : 0;
 
-  function getUnderfundedBarColor(score: number): string {
-    if (score >= 3.5) return "bg-red-500";
-    if (score >= 2.5) return "bg-orange-500";
+  function getNeglectColor(score: number): string {
+    if (score >= 5) return "bg-red-500";
+    if (score >= 3) return "bg-orange-500";
     if (score >= 1.5) return "bg-amber-500";
     return "bg-blue-500";
   }
@@ -547,7 +565,7 @@ function CrisisDetailView({ crisis, onBack }: { crisis: CrisisData; onBack: () =
             <div>
               <h2 className="text-base font-semibold text-foreground">{crisis.crisisName}</h2>
               <p className="text-[11px] text-muted-foreground font-mono mt-0.5">
-                {crisis.countries.length} countr{crisis.countries.length === 1 ? "y" : "ies"} · ranked by underfunding
+                {crisis.countries.length} countr{crisis.countries.length === 1 ? "y" : "ies"} · ranked by Neglect Index
               </p>
               <div className="flex items-center gap-1 mt-1.5 flex-wrap">
                 {crisis.categories.map((cat) => (
@@ -621,12 +639,12 @@ function CrisisDetailView({ crisis, onBack }: { crisis: CrisisData; onBack: () =
                     )}
                     <ChevronRight className="h-3 w-3 text-cyan-400/30 shrink-0" />
                   </div>
-                  {entry.underfundedScore > 0 && (
+                  {entry.neglectIndex > 0 && (
                     <div className="mt-1.5 flex items-center gap-2">
                       <div className="flex-1 h-1 rounded-full bg-muted/20 overflow-hidden">
-                        <div className={`h-full rounded-full ${getUnderfundedBarColor(entry.underfundedScore)}`} style={{ width: `${(entry.underfundedScore / 5) * 100}%` }} />
+                        <div className={`h-full rounded-full ${getNeglectColor(entry.neglectIndex)}`} style={{ width: `${(entry.neglectIndex / 8) * 100}%` }} />
                       </div>
-                      <span className="text-[9px] font-mono text-muted-foreground shrink-0">{entry.underfundedScore.toFixed(1)}</span>
+                      <span className="text-[9px] font-mono text-muted-foreground shrink-0">{entry.neglectIndex.toFixed(2)}</span>
                     </div>
                   )}
                 </button>
@@ -692,7 +710,8 @@ function CategoryDetailView({
         const fund = crisis.countries.reduce((s, c) => s + (c.overallFunding?.totalFunding ?? 0), 0);
         const pct  = req > 0 ? Math.min((fund / req) * 100, 100) : 0;
         const name = crisis.crisisName.length > 16 ? crisis.crisisName.slice(0, 16) + "…" : crisis.crisisName;
-        return { name, pct: Math.round(pct), req: Math.round(req / 1_000_000), fund: Math.round(fund / 1_000_000) };
+        const maxSev = Math.max(...crisis.countries.map((c) => c.severityIndex));
+        return { name, pct: Math.round(pct), req: Math.round(req / 1_000_000), fund: Math.round(fund / 1_000_000), severity: maxSev };
       })
       .sort((a, b) => a.pct - b.pct);
   }, [crises]);
@@ -770,11 +789,11 @@ function CategoryDetailView({
               <Separator className="opacity-20" />
               <div className="space-y-2">
                 <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-                  % Funded per Crisis
+                  % Funded vs Max Severity
                 </p>
                 <div className="h-52 w-full">
                   <ResponsiveContainer width="100%" height="100%">
-                    <BarChart
+                    <ComposedChart
                       data={crisisChartData}
                       layout="vertical"
                       margin={{ top: 4, right: 48, bottom: 4, left: 10 }}
@@ -782,11 +801,21 @@ function CategoryDetailView({
                       <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.06)" horizontal={false} />
                       <XAxis
                         type="number"
+                        xAxisId="bottom"
                         domain={[0, 100]}
                         tick={{ fontSize: 9, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace" }}
                         tickFormatter={(v) => `${v}%`}
                         tickLine={false}
                         axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
+                      />
+                      <XAxis
+                        type="number"
+                        xAxisId="top"
+                        orientation="top"
+                        domain={[0, 5]}
+                        tick={{ fontSize: 9, fill: "rgba(248,113,113,0.6)", fontFamily: "monospace" }}
+                        tickLine={false}
+                        axisLine={false}
                       />
                       <YAxis
                         type="category"
@@ -799,17 +828,35 @@ function CategoryDetailView({
                       <Tooltip
                         contentStyle={chartTooltipStyle}
                         labelStyle={chartLabelStyle}
-                        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-                        formatter={(value: any) => [`${value ?? 0}%`, "% Funded"]}
+                        formatter={(value: number | string | undefined, name: string | undefined) => {
+                          if (value === undefined || name === undefined) return ["", name || ""];
+                          if (name === "pct") return [`${value}%`, "% Funded"];
+                          if (name === "severity" && typeof value === "number") return [value.toFixed(1), "Max Severity"];
+                          return [value, name];
+                        }}
+                      />
+                      <Legend
+                        wrapperStyle={{ fontSize: 9, fontFamily: "monospace", color: "rgba(0,200,255,0.5)", paddingTop: 4 }}
+                        iconSize={8}
                       />
                       <Bar
+                        xAxisId="bottom"
                         dataKey="pct"
                         name="% Funded"
                         radius={[0, 3, 3, 0]}
                         fill="#22d3ee"
                         opacity={0.82}
                       />
-                    </BarChart>
+                      <Line
+                        xAxisId="top"
+                        dataKey="severity"
+                        name="Severity"
+                        type="monotone"
+                        stroke="#f87171"
+                        strokeWidth={2}
+                        dot={{ r: 3, fill: "#f87171" }}
+                      />
+                    </ComposedChart>
                   </ResponsiveContainer>
                 </div>
               </div>
@@ -1011,6 +1058,31 @@ function CountriesTab() {
   );
 }
 
+// ── Scatter Tooltip ──────────────────────────────────────────────────────────
+function ScatterTooltip({ active, payload }: {
+  active?: boolean;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  payload?: any[];
+}) {
+  if (!active || !payload?.length) return null;
+  const d = payload[0]?.payload as { name: string; severity: number; percentFunded: number; requirements: number } | undefined;
+  if (!d) return null;
+  return (
+    <div style={chartTooltipStyle}>
+      <p style={{ color: "rgba(0,220,255,0.95)", fontWeight: 700, marginBottom: 4 }}>{d.name}</p>
+      <p style={{ color: "rgba(0,200,255,0.75)", fontSize: 10, fontFamily: "monospace" }}>
+        Severity: {d.severity.toFixed(1)}
+      </p>
+      <p style={{ color: "rgba(248,113,113,0.9)", fontSize: 10, fontFamily: "monospace" }}>
+        % Funded: {d.percentFunded}%
+      </p>
+      <p style={{ color: "rgba(0,200,255,0.55)", fontSize: 10, fontFamily: "monospace" }}>
+        Requirements: ${d.requirements}M
+      </p>
+    </div>
+  );
+}
+
 // ── Global Tab ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, className }: { label: string; value: string; className?: string }) {
   return (
@@ -1024,6 +1096,17 @@ function StatCard({ label, value, className }: { label: string; value: string; c
 function GlobalTab() {
   const { data } = useAppContext();
   const stats = data.globalStats;
+
+  const scatterData = useMemo(() => {
+    return Object.values(data.countries)
+      .filter(c => c.severity && c.overallFunding && c.overallFunding.totalRequirements > 0)
+      .map(c => ({
+        name: c.name,
+        severity: c.severity!.severityIndex,
+        percentFunded: Math.round(c.overallFunding!.percentFunded),
+        requirements: Math.round(c.overallFunding!.totalRequirements / 1_000_000),
+      }));
+  }, [data.countries]);
 
   return (
     <ScrollArea className="flex-1 min-h-0">
@@ -1050,6 +1133,76 @@ function GlobalTab() {
           <Progress value={Math.min(stats.percentFunded, 100)} className="h-1.5" />
           <p className="text-[10px] font-mono text-muted-foreground">{stats.percentFunded}% of total requirements funded</p>
         </div>
+
+        {scatterData.length > 0 && (
+          <>
+            <Separator className="opacity-20 my-2" />
+            <div className="space-y-2">
+              <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
+                Severity vs Funding Disparity
+              </p>
+              <div className="h-64 w-full">
+                <ResponsiveContainer width="100%" height="100%">
+                  {/*
+                    FIX: left:-12 clipped the Y-axis label and tick text.
+                    Use positive margins + explicit YAxis width to ensure full visibility.
+                  */}
+                  <ScatterChart margin={{ top: 12, right: 16, bottom: 36, left: 12 }}>
+                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" />
+                    <XAxis
+                      type="number"
+                      dataKey="severity"
+                      name="Severity"
+                      domain={[0, 5]}
+                      tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
+                      tickLine={false}
+                      axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
+                      label={{
+                        value: "Severity Index →",
+                        position: "insideBottom",
+                        offset: -22,
+                        style: { fontSize: 9, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace" },
+                      }}
+                    />
+                    <YAxis
+                      type="number"
+                      dataKey="percentFunded"
+                      name="% Funded"
+                      domain={[0, 100]}
+                      width={48}
+                      tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
+                      tickFormatter={(v) => `${v}%`}
+                      tickLine={false}
+                      axisLine={false}
+                      label={{
+                        value: "% Funded",
+                        angle: -90,
+                        position: "insideLeft",
+                        offset: 12,
+                        style: { fontSize: 9, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace", textAnchor: "middle" },
+                      }}
+                    />
+                    <ZAxis type="number" dataKey="requirements" range={[30, 500]} name="Requirements ($M)" />
+                    <Tooltip
+                      cursor={{ strokeDasharray: "3 3", stroke: "rgba(0,200,255,0.25)" }}
+                      content={<ScatterTooltip />}
+                    />
+                    <Scatter
+                      data={scatterData}
+                      fill="#f87171"
+                      fillOpacity={0.65}
+                      stroke="#b91c1c"
+                      strokeWidth={1}
+                    />
+                  </ScatterChart>
+                </ResponsiveContainer>
+              </div>
+              <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
+                Bubble size represents total requirements. Countries in the bottom right (high severity, low funding) indicate the largest disparities.
+              </p>
+            </div>
+          </>
+        )}
       </div>
     </ScrollArea>
   );
