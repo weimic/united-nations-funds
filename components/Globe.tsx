@@ -5,8 +5,9 @@ import { EffectComposer, Bloom } from "@react-three/postprocessing";
 import { OrbitControls, Stars } from "@react-three/drei";
 import { useEffect, useMemo, useRef, useState, type MutableRefObject } from "react";
 import * as THREE from "three";
-import { createLandMask, getFeatureCentroid, getSeverityColor } from "@/lib/geo-utils";
+import { createLandMask, getFeatureCentroid, getSeverityColor, buildFeatureBBoxes, findCountryAtPoint, buildSolidCountryTexture } from "@/lib/geo-utils";
 import type { GeoData, GeoFeature, OverallFunding } from "@/lib/types";
+import type { FeatureBBox } from "@/lib/geo-utils";
 import { useAppContext } from "@/lib/app-context";
 import { formatDollars } from "@/lib/utils";
 
@@ -49,15 +50,27 @@ type HoveredSpike = {
   severityIndex: number;
 };
 
+/** Minimal tooltip for hovering a country on the globe surface (not via spike). */
+type CountryHoverData = {
+  x: number;
+  y: number;
+  iso3: string;
+  countryName: string;
+  hasData: boolean;
+  totalFunding?: number;
+  percentFunded?: number;
+  severityIndex?: number;
+};
+
 function latLongToVector3(lat: number, lon: number, radius: number): THREE.Vector3 {
   const latRad = THREE.MathUtils.degToRad(lat);
   const lonRad = THREE.MathUtils.degToRad(lon);
   const cosLat = Math.cos(latRad);
 
   return new THREE.Vector3(
-    radius * cosLat * Math.cos(lonRad),
+    radius * cosLat * Math.sin(lonRad),
     radius * Math.sin(latRad),
-    radius * cosLat * Math.sin(lonRad)
+    radius * cosLat * Math.cos(lonRad)
   );
 }
 
@@ -67,13 +80,13 @@ function angularDistance(a: THREE.Vector3, b: THREE.Vector3): number {
 
 /**
  * Build funding spikes from real country data.
- * Selects up to 60 countries with the largest requirements, then scales spike
- * height by funding gap (requirements - on-appeal funding) so taller = bigger shortfall.
- * Color is driven by % funded: deep red = severely underfunded, orange = partially funded.
+ * In "fundingGap" mode: selects up to 60 countries by largest funding gap.
+ * In "severity" mode: selects up to 60 countries by highest severity index.
  */
 function buildThreatsFromData(
   countries: Record<string, { name: string; overallFunding: OverallFunding | null; severity: { severityIndex: number } | null }>,
-  features: GeoFeature[]
+  features: GeoFeature[],
+  mode: "fundingGap" | "severity" = "fundingGap"
 ): ActiveThreat[] {
   const centroidMap = new Map<string, [number, number]>();
   for (const feature of features) {
@@ -84,6 +97,41 @@ function buildThreatsFromData(
     }
   }
 
+  if (mode === "severity") {
+    const entries = Object.entries(countries)
+      .filter(
+        ([iso3, c]) =>
+          c.severity &&
+          c.severity.severityIndex > 0 &&
+          centroidMap.has(iso3)
+      )
+      .map(([iso3, c]) => ({
+        iso3,
+        country: c,
+        centroid: centroidMap.get(iso3)!,
+      }))
+      .sort((a, b) => (b.country.severity?.severityIndex ?? 0) - (a.country.severity?.severityIndex ?? 0))
+      .slice(0, 60);
+
+    if (entries.length === 0) return [];
+    const maxSev = Math.max(...entries.map((e) => e.country.severity?.severityIndex ?? 0), 1);
+
+    return entries.map(({ iso3, country, centroid }) => ({
+      id: iso3,
+      countryName: country.name,
+      lat: centroid[0],
+      lon: centroid[1],
+      magnitude: Math.max(0.05, (country.severity?.severityIndex ?? 0) / maxSev),
+      totalFunding: country.overallFunding?.totalFunding ?? 0,
+      offAppealFunding: country.overallFunding?.offAppealFunding ?? 0,
+      totalFundingAll: country.overallFunding?.totalFundingAll ?? 0,
+      percentFunded: country.overallFunding?.percentFunded ?? 0,
+      percentFundedAll: country.overallFunding?.percentFundedAll ?? 0,
+      severityIndex: country.severity?.severityIndex ?? 0,
+    }));
+  }
+
+  // Default: fundingGap mode
   const entries = Object.entries(countries)
     .filter(([iso3, c]) =>
       c.overallFunding &&
@@ -100,8 +148,6 @@ function buildThreatsFromData(
     .slice(0, 60);
 
   if (entries.length === 0) return [];
-
-  // Spike height represents funding gap — sort + normalize by funding
   const maxGap = Math.max(...entries.map(e => e.fundingGap), 1);
 
   return entries.map(({ iso3, country, centroid, fundingGap }) => ({
@@ -237,8 +283,7 @@ function CameraFocusController({
     camera.lookAt(0, 0, 0);
     if (orbitRef.current) orbitRef.current.update();
     onFocusHandled();
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [globeFocusIso3]);
+  }, [globeFocusIso3]); // Only re-run on focus target change
 
   return null;
 }
@@ -280,7 +325,7 @@ function LandmassDots({ geoData, severityZones }: { geoData: GeoData; severityZo
       // So tan(lon) = z/x is correct.
 
       const lat = Math.asin(y) * (180 / Math.PI);
-      const lon = Math.atan2(z, x) * (180 / Math.PI);
+      const lon = Math.atan2(x, z) * (180 / Math.PI);
 
       // Map to mask UV
       const u = (lon + 180) / 360;
@@ -377,11 +422,13 @@ function LandmassDots({ geoData, severityZones }: { geoData: GeoData; severityZo
 
 function ThreatSpikes({
   threats,
+  spikeMode,
   onHover,
   onLeave,
   onClick,
 }: {
   threats: ActiveThreat[];
+  spikeMode: "fundingGap" | "severity";
   onHover: (instanceId: number, x: number, y: number) => void;
   onLeave: () => void;
   onClick: (instanceId: number) => void;
@@ -431,10 +478,17 @@ function ThreatSpikes({
 
       meshRef.current.setMatrixAt(i, helper.matrix);
 
-      // Color by % funded: deep red (< 30%) → orange (30-60%) → amber (60%+)
-      // Low % funded = more underfunded = deeper red
-      const pctNorm = THREE.MathUtils.clamp(threat.percentFunded / 100, 0, 1);
-      const color = new THREE.Color("#ff1a1a").lerp(new THREE.Color("#ff8c42"), pctNorm);
+      // Color depends on spikeMode
+      let color: THREE.Color;
+      if (spikeMode === "severity") {
+        // Severity mode: color by severity index (low = amber, high = deep red)
+        const sevNorm = THREE.MathUtils.clamp(threat.severityIndex / 5, 0, 1);
+        color = new THREE.Color("#ff8c42").lerp(new THREE.Color("#ff1a1a"), sevNorm);
+      } else {
+        // Funding gap mode: color by % funded (low % = deep red, high % = amber)
+        const pctNorm = THREE.MathUtils.clamp(threat.percentFunded / 100, 0, 1);
+        color = new THREE.Color("#ff1a1a").lerp(new THREE.Color("#ff8c42"), pctNorm);
+      }
       meshRef.current.setColorAt(i, color);
     }
 
@@ -443,7 +497,7 @@ function ThreatSpikes({
     if (meshRef.current.instanceColor) {
       meshRef.current.instanceColor.needsUpdate = true;
     }
-  }, [threats, up]);
+  }, [threats, up, spikeMode]);
 
   if (threats.length === 0) return null;
 
@@ -469,26 +523,92 @@ function ThreatSpikes({
   );
 }
 
+// ── Country Hit Sphere ─────────────────────────────────────────────────────────
+/** Invisible sphere that intercepts pointer events on the globe surface. */
+function CountryHitSphere({
+  bboxes,
+  onCountryHover,
+  onCountryLeave,
+  onCountryClick,
+}: {
+  bboxes: FeatureBBox[];
+  onCountryHover: (iso3: string, name: string, clientX: number, clientY: number) => void;
+  onCountryLeave: () => void;
+  onCountryClick: (iso3: string) => void;
+}) {
+  return (
+    <mesh
+      onPointerMove={(e) => {
+        const point = e.point;
+        const r = point.length();
+        if (r === 0) return;
+        const lat = Math.asin(point.y / r) * (180 / Math.PI);
+        const lon = Math.atan2(point.x, point.z) * (180 / Math.PI);
+
+        const feature = findCountryAtPoint(lon, lat, bboxes);
+        if (feature) {
+          onCountryHover(feature.id, feature.properties.name, e.nativeEvent.clientX, e.nativeEvent.clientY);
+        } else {
+          onCountryLeave();
+        }
+      }}
+      onPointerLeave={onCountryLeave}
+      onClick={(e) => {
+        e.stopPropagation();
+        const point = e.point;
+        const r = point.length();
+        if (r === 0) return;
+        const lat = Math.asin(point.y / r) * (180 / Math.PI);
+        const lon = Math.atan2(point.x, point.z) * (180 / Math.PI);
+
+        const feature = findCountryAtPoint(lon, lat, bboxes);
+        if (feature) {
+          onCountryClick(feature.id);
+        }
+      }}
+    >
+      <sphereGeometry args={[GLOBE_RADIUS, 64, 64]} />
+      <meshBasicMaterial transparent opacity={0} depthWrite={false} />
+    </mesh>
+  );
+}
+
 function GlobeCore({
   geoData,
   severityZones,
   threats,
   hoveredIso3,
+  selectedCountryIso3,
   globeFocusIso3,
+  spikeMode,
+  mapStyle,
+  solidMapTexture,
+  bboxes,
   onFocusHandled,
   onSpikeHover,
   onSpikeLeave,
   onSpikeClick,
+  onCountryHover,
+  onCountryLeave,
+  onCountryClick,
 }: {
   geoData: GeoData;
   severityZones: SeverityZone[];
   threats: ActiveThreat[];
   hoveredIso3: string | null;
+  selectedCountryIso3: string | null;
   globeFocusIso3: string | null;
+  spikeMode: "fundingGap" | "severity";
+  mapStyle: "dots" | "solid";
+  solidMapTexture: THREE.CanvasTexture | null;
+  bboxes: FeatureBBox[];
   onFocusHandled: () => void;
   onSpikeHover: (instanceId: number, x: number, y: number) => void;
   onSpikeLeave: () => void;
   onSpikeClick: (instanceId: number) => void;
+  onCountryHover: (iso3: string, name: string, clientX: number, clientY: number) => void;
+  onCountryLeave: () => void;
+  onCountryClick: (iso3: string) => void;
 }) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const orbitRef = useRef<any>(null);
@@ -496,19 +616,49 @@ function GlobeCore({
   return (
     <>
       <group>
-        <mesh>
-          <sphereGeometry args={[GLOBE_RADIUS * 0.985, 64, 64]} />
-          <meshBasicMaterial color="#03060b" />
-        </mesh>
+        {/* Base sphere + map visualization */}
+        {mapStyle === "dots" ? (
+          <>
+            <mesh>
+              <sphereGeometry args={[GLOBE_RADIUS * 0.985, 64, 64]} />
+              <meshBasicMaterial color="#03060b" />
+            </mesh>
+            <LandmassDots geoData={geoData} severityZones={severityZones} />
+          </>
+        ) : solidMapTexture ? (
+          <mesh>
+            <sphereGeometry args={[GLOBE_RADIUS * 0.985, 64, 64]} />
+            <meshBasicMaterial map={solidMapTexture} toneMapped={false} />
+          </mesh>
+        ) : (
+          <mesh>
+            <sphereGeometry args={[GLOBE_RADIUS * 0.985, 64, 64]} />
+            <meshBasicMaterial color="#03060b" />
+          </mesh>
+        )}
 
-        <LandmassDots geoData={geoData} severityZones={severityZones} />
+        {/* Country hover hit-test sphere */}
+        <CountryHitSphere
+          bboxes={bboxes}
+          onCountryHover={onCountryHover}
+          onCountryLeave={onCountryLeave}
+          onCountryClick={onCountryClick}
+        />
+
         <ThreatSpikes
           threats={threats}
+          spikeMode={spikeMode}
           onHover={onSpikeHover}
           onLeave={onSpikeLeave}
           onClick={onSpikeClick}
         />
+
+        {/* Border highlight: hovered country */}
         <CountryBorderHighlight iso3={hoveredIso3} features={geoData.features} />
+        {/* Border highlight: selected country (persistent) */}
+        {selectedCountryIso3 && selectedCountryIso3 !== hoveredIso3 && (
+          <CountryBorderHighlight iso3={selectedCountryIso3} features={geoData.features} />
+        )}
 
         <mesh>
           <sphereGeometry args={[GLOBE_RADIUS * 1.03, 64, 64]} />
@@ -543,15 +693,26 @@ function GlobeCore({
 }
 
 export default function Globe({ geoData }: { geoData: GeoData }) {
-  const { data, globeFocusIso3, setGlobeFocusIso3, setSelectedCountryIso3, setSidebarTab } = useAppContext();
-  const [tooltip, setTooltip] = useState<HoveredSpike | null>(null);
+  const {
+    data,
+    globeFocusIso3,
+    setGlobeFocusIso3,
+    selectedCountryIso3,
+    setSelectedCountryIso3,
+    setSidebarTab,
+    spikeMode,
+    mapStyle,
+    setMapStyle,
+  } = useAppContext();
+  const [spikeTooltip, setSpikeTooltip] = useState<HoveredSpike | null>(null);
+  const [countryTooltip, setCountryTooltip] = useState<CountryHoverData | null>(null);
   const [hoveredIso3, setHoveredIso3] = useState<string | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Build real-data threats once — shared for both rendering and tooltip lookup
+  // Build threats once — shared for both rendering and tooltip lookup
   const threats = useMemo(
-    () => buildThreatsFromData(data.countries, geoData.features),
-    [data.countries, geoData.features]
+    () => buildThreatsFromData(data.countries, geoData.features, spikeMode),
+    [data.countries, geoData.features, spikeMode]
   );
 
   const severityZones = useMemo(
@@ -559,6 +720,36 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
     [data.countries, geoData.features]
   );
 
+  // Pre-computed bounding boxes for fast country-at-point lookup
+  const bboxes = useMemo(
+    () => buildFeatureBBoxes(geoData.features),
+    [geoData.features]
+  );
+
+  // Pre-compute solid country map texture (always available for toggle)
+  const solidMapTexture = useMemo(() => {
+    const colorMap: Record<string, string> = {};
+    for (const feature of geoData.features) {
+      const country = data.countries[feature.id];
+      if (!country) {
+        // No data → white (neutral)
+        colorMap[feature.id] = "#e0e0e0";
+      } else if (country.severity && country.severity.severityIndex > 0) {
+        const sev = country.severity.severityIndex;
+        const sevColor = getSeverityColor(sev);
+        const baseColor = new THREE.Color("#5a96b0");
+        const t = Math.min(sev / 5, 1);
+        baseColor.lerp(sevColor, t);
+        colorMap[feature.id] = `#${baseColor.getHexString()}`;
+      } else {
+        // Has data but no severity → base blue
+        colorMap[feature.id] = "#5a96b0";
+      }
+    }
+    return buildSolidCountryTexture(geoData, colorMap, "#03060b");
+  }, [geoData, data.countries]);
+
+  // ── Spike hover handlers ──────────────────────────────────────────────────
   const handleSpikeHover = (instanceId: number, x: number, y: number) => {
     const threat = threats[instanceId];
     if (!threat || !containerRef.current) return;
@@ -566,7 +757,8 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
     const localX = x - bounds.left;
     const localY = y - bounds.top;
     setHoveredIso3(threat.id);
-    setTooltip({
+    setCountryTooltip(null); // spike takes priority
+    setSpikeTooltip({
       x: localX,
       y: localY,
       iso3: threat.id,
@@ -581,7 +773,7 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
   };
 
   const handleSpikeLeave = () => {
-    setTooltip(null);
+    setSpikeTooltip(null);
     setHoveredIso3(null);
   };
 
@@ -589,6 +781,45 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
     const threat = threats[instanceId];
     if (!threat) return;
     setSelectedCountryIso3(threat.id);
+    setSidebarTab("countries");
+  };
+
+  // ── Country (surface) hover handlers ──────────────────────────────────────
+  const handleCountryHover = (iso3: string, name: string, clientX: number, clientY: number) => {
+    if (!containerRef.current) return;
+    const bounds = containerRef.current.getBoundingClientRect();
+    const localX = clientX - bounds.left;
+    const localY = clientY - bounds.top;
+    setHoveredIso3(iso3);
+
+    // Don't overwrite spike tooltip
+    if (spikeTooltip) return;
+
+    const country = data.countries[iso3];
+    setCountryTooltip({
+      x: localX,
+      y: localY,
+      iso3,
+      countryName: name,
+      hasData: !!country,
+      totalFunding: country?.overallFunding?.totalFunding,
+      percentFunded: country?.overallFunding?.percentFunded,
+      severityIndex: country?.severity?.severityIndex,
+    });
+  };
+
+  const handleCountryLeave = () => {
+    // Only clear if spike isn't active
+    if (!spikeTooltip) {
+      setCountryTooltip(null);
+      setHoveredIso3(null);
+    }
+  };
+
+  const handleCountryClick = (iso3: string) => {
+    const country = data.countries[iso3];
+    if (!country) return; // No click for countries without data
+    setSelectedCountryIso3(iso3);
     setSidebarTab("countries");
   };
 
@@ -604,11 +835,19 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
           severityZones={severityZones}
           threats={threats}
           hoveredIso3={hoveredIso3}
+          selectedCountryIso3={selectedCountryIso3}
           globeFocusIso3={globeFocusIso3}
+          spikeMode={spikeMode}
+          mapStyle={mapStyle}
+          solidMapTexture={solidMapTexture}
+          bboxes={bboxes}
           onFocusHandled={() => setGlobeFocusIso3(null)}
           onSpikeHover={handleSpikeHover}
           onSpikeLeave={handleSpikeLeave}
           onSpikeClick={handleSpikeClick}
+          onCountryHover={handleCountryHover}
+          onCountryLeave={handleCountryLeave}
+          onCountryClick={handleCountryClick}
         />
 
         <EffectComposer enableNormalPass={false}>
@@ -616,40 +855,99 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
         </EffectComposer>
       </Canvas>
 
-      {/* Spike hover tooltip — HTML overlay outside the WebGL canvas */}
-      {tooltip && (
+      {/* Tooltip — HTML overlay outside the WebGL canvas */}
+      {spikeTooltip && (
         <div
-          className="pointer-events-none absolute z-30 px-3 py-2"
+          className="pointer-events-none absolute z-30"
           style={{
-            left: Math.min(Math.max(tooltip.x + 10, 8), Math.max(8, (containerRef.current?.clientWidth ?? 0) - 220)),
-            top: Math.min(Math.max(tooltip.y, 24), Math.max(24, (containerRef.current?.clientHeight ?? 0) - 40)),
-            transform: "translateY(-50%)",
+            left: Math.min(Math.max(spikeTooltip.x, 60), (containerRef.current?.clientWidth ?? 300) - 60),
+            top: Math.max(spikeTooltip.y - 8, 20),
+            transform: "translate(-50%, -100%)",
+            textShadow: "0 1px 6px rgba(0,0,0,0.95), 0 0 3px rgba(0,0,0,0.8)",
           }}
         >
-          <div className="flex items-center gap-2 mb-1">
-            <p className="text-[12px] font-semibold font-mono text-cyan-100">{tooltip.countryName}</p>
-            {tooltip.severityIndex > 0 && (
-              <span className="text-[10px] font-mono font-bold text-red-400">
-                {tooltip.severityIndex.toFixed(1)}/5
+          <div className="flex flex-col items-center gap-0.5 px-1">
+            <p className="text-[12px] font-semibold font-mono text-cyan-100 whitespace-nowrap">{spikeTooltip.countryName}</p>
+            {spikeTooltip.severityIndex > 0 && (
+              <span className="text-[11px] font-mono font-bold text-red-400">
+                Severity {spikeTooltip.severityIndex.toFixed(1)}/5
               </span>
             )}
-          </div>
-          <p className="text-[11px] font-mono text-cyan-400">
-            Funded (on-appeal): {formatDollars(tooltip.totalFunding)}
-          </p>
-          {tooltip.offAppealFunding > 0 && (
-            <p className="text-[10px] font-mono text-muted-foreground">
-              Off-appeal: {formatDollars(tooltip.offAppealFunding)} (all: {tooltip.percentFundedAll.toFixed(0)}%)
+            <p className="text-[10px] font-mono text-cyan-400 whitespace-nowrap">
+              {formatDollars(spikeTooltip.totalFunding)} funded
+              {Number.isFinite(spikeTooltip.percentFunded) && ` · ${spikeTooltip.percentFunded.toFixed(0)}%`}
             </p>
-          )}
-          <p className="text-[10px] font-mono text-muted-foreground">
-            {Number.isFinite(tooltip.percentFunded)
-              ? `${tooltip.percentFunded.toFixed(0)}% of requirements`
-              : "—"}
-          </p>
-          <p className="text-[9px] font-mono text-cyan-400/40 mt-0.5">Click to open country</p>
+            <p className="text-[9px] font-mono text-cyan-400/50 mt-0.5">Click to open</p>
+          </div>
         </div>
       )}
+
+      {/* Country surface hover tooltip */}
+      {!spikeTooltip && countryTooltip && (
+        <div
+          className="pointer-events-none absolute z-30"
+          style={{
+            left: Math.min(Math.max(countryTooltip.x, 60), (containerRef.current?.clientWidth ?? 300) - 60),
+            top: Math.max(countryTooltip.y - 8, 20),
+            transform: "translate(-50%, -100%)",
+            textShadow: "0 1px 6px rgba(0,0,0,0.95), 0 0 3px rgba(0,0,0,0.8)",
+          }}
+        >
+          <div className="flex flex-col items-center gap-0.5 px-1">
+            <p className="text-[12px] font-semibold font-mono text-cyan-100 whitespace-nowrap">{countryTooltip.countryName}</p>
+            {countryTooltip.hasData ? (
+              <>
+                {countryTooltip.severityIndex != null && countryTooltip.severityIndex > 0 && (
+                  <span className="text-[11px] font-mono font-bold text-red-400">
+                    Severity {countryTooltip.severityIndex.toFixed(1)}/5
+                  </span>
+                )}
+                {countryTooltip.totalFunding != null && (
+                  <p className="text-[10px] font-mono text-cyan-400 whitespace-nowrap">
+                    {formatDollars(countryTooltip.totalFunding)} funded
+                    {countryTooltip.percentFunded != null && Number.isFinite(countryTooltip.percentFunded) && ` · ${countryTooltip.percentFunded.toFixed(0)}%`}
+                  </p>
+                )}
+                <p className="text-[9px] font-mono text-cyan-400/50 mt-0.5">Click to open</p>
+              </>
+            ) : (
+              <p className="text-[10px] font-mono text-cyan-400/40 whitespace-nowrap">No funding or crisis data</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Data label — what the spikes currently represent */}
+      <div className="absolute bottom-4 left-4 z-20">
+        <div className="px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/20">
+          <span className="text-[10px] font-mono text-cyan-400/70 uppercase tracking-widest">
+            Spikes: {spikeMode === "fundingGap" ? "Funding Gap" : "Severity"}
+          </span>
+        </div>
+      </div>
+
+      {/* Map style toggle */}
+      <div className="absolute bottom-4 right-4 z-20">
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/20">
+          <span className={`text-[10px] font-mono cursor-pointer transition-colors ${mapStyle === "dots" ? "text-cyan-400" : "text-cyan-400/40"}`} onClick={() => setMapStyle("dots")}>
+            Dots
+          </span>
+          <button
+            onClick={() => setMapStyle(mapStyle === "dots" ? "solid" : "dots")}
+            className="relative w-8 h-4 rounded-full transition-colors"
+            style={{ backgroundColor: mapStyle === "solid" ? "rgba(34,211,238,0.3)" : "rgba(34,211,238,0.1)" }}
+            aria-label="Toggle map style"
+          >
+            <span
+              className="absolute top-0.5 h-3 w-3 rounded-full bg-cyan-400 transition-all"
+              style={{ left: mapStyle === "dots" ? "2px" : "calc(100% - 14px)" }}
+            />
+          </button>
+          <span className={`text-[10px] font-mono cursor-pointer transition-colors ${mapStyle === "solid" ? "text-cyan-400" : "text-cyan-400/40"}`} onClick={() => setMapStyle("solid")}>
+            Countries
+          </span>
+        </div>
+      </div>
 
       <div className="pointer-events-none absolute left-0 top-0 h-20 w-full bg-gradient-to-b from-black/75 to-transparent" />
       <div className="pointer-events-none absolute bottom-0 left-0 h-20 w-full bg-gradient-to-t from-black/75 to-transparent" />

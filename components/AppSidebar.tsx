@@ -43,10 +43,6 @@ import {
   Legend,
   ComposedChart,
   Line,
-  ScatterChart,
-  Scatter,
-  ZAxis,
-  ReferenceLine,
   BarChart,
 } from "recharts";
 import type {
@@ -80,47 +76,6 @@ function HoverTip({ children, tip }: { children: ReactNode; tip: string }) {
   );
 }
 
-// ── Funding Circle (radial progress) ──────────────────────────────────────────
-function FundingCircle({
-  pct,
-  label,
-  amount,
-  color,
-}: {
-  pct: number;
-  label: string;
-  amount: string;
-  color: string;
-}) {
-  const r = 20;
-  const circumference = 2 * Math.PI * r;
-  const dash = Math.max(0, Math.min(pct / 100, 1)) * circumference;
-  return (
-    <div className="flex flex-col items-center gap-0.5">
-      <div className="relative w-[60px] h-[60px]">
-        <svg viewBox="0 0 48 48" className="w-full h-full -rotate-90">
-          <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="3.5" />
-          <circle
-            cx="24" cy="24" r={r} fill="none"
-            stroke={color} strokeWidth="3.5"
-            strokeDasharray={`${dash.toFixed(2)} ${circumference.toFixed(2)}`}
-            strokeLinecap="round"
-          />
-        </svg>
-        <div className="absolute inset-0 flex items-center justify-center">
-          <span className="text-[10px] font-mono font-bold" style={{ color }}>
-            {Math.round(pct)}%
-          </span>
-        </div>
-      </div>
-      <span className="text-[9px] font-mono text-muted-foreground text-center leading-tight">{label}</span>
-      <span className="text-[9px] font-mono text-center font-medium truncate max-w-[64px]" style={{ color }}>
-        {amount}
-      </span>
-    </div>
-  );
-}
-
 function getSeverityBadgeColor(category: string): string {
   switch (category) {
     case "Very High": return "bg-red-600/90 text-white border-red-500/50";
@@ -142,7 +97,6 @@ function getSeverityColorClass(cat: string): string {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getCategoryIcon(_cat: string): string {
   return "";
 }
@@ -445,7 +399,7 @@ function CountryDetailView({
                 {rankings.neglectIndex > 0 && (
                   <div className="rounded border border-amber-500/15 bg-amber-500/5 p-2.5 space-y-1.5">
                     <div className="flex items-center justify-between">
-                      <HoverTip tip="How overlooked this crisis is: severity × unmet funding × scale of needs. Higher score means bigger mismatch between need and attention.">
+                      <HoverTip tip="Measures how overlooked this country's crisis is. Combines severity, % of funding still needed, and scale of the emergency. Higher = bigger gap between need and response.">
                         <span className="text-[10px] font-mono text-muted-foreground">Neglect Index</span>
                       </HoverTip>
                       {rankings.niRank && (
@@ -520,49 +474,6 @@ function CountryDetailView({
                       )}
                     </button>
                   ))}
-                </div>
-              </div>
-            </>
-          )}
-
-          {/* ── Overall Funding ───────────────────────────────────────── */}
-          {overall && (
-            <>
-              <Separator className="opacity-20" />
-              <div className="space-y-2">
-                <div className="flex items-center gap-2">
-                  <BarChart3 className="h-3.5 w-3.5 text-cyan-400/60" />
-                  <HoverTip tip="UN OCHA funding tracker. On-Appeal = funding for formal humanitarian plans. Off-Appeal = additional funding outside plans.">
-                    <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-                      Overall Funding (FTS)
-                    </span>
-                  </HoverTip>
-                </div>
-                <div className="flex items-center justify-between text-[10px] font-mono">
-                  <span className="text-muted-foreground">Requirements</span>
-                  <span className="text-foreground font-medium">{formatDollars(overall.totalRequirements)}</span>
-                </div>
-                <div className="flex justify-around items-start py-1 gap-1">
-                  <FundingCircle
-                    pct={Math.min(overall.percentFunded, 100)}
-                    label="On-Appeal"
-                    amount={formatDollars(overall.totalFunding)}
-                    color={overall.percentFunded < 50 ? "#ef4444" : "#22d3ee"}
-                  />
-                  {overall.offAppealFunding > 0 && (
-                    <FundingCircle
-                      pct={overall.totalRequirements > 0 ? Math.min((overall.offAppealFunding / overall.totalRequirements) * 100, 100) : 0}
-                      label="Off-Appeal"
-                      amount={formatDollars(overall.offAppealFunding)}
-                      color="#0e7490"
-                    />
-                  )}
-                  <FundingCircle
-                    pct={Math.min(overall.percentFundedAll, 100)}
-                    label="All"
-                    amount={`${overall.percentFundedAll}%`}
-                    color={overall.percentFundedAll < 50 ? "#f97316" : "#06b6d4"}
-                  />
                 </div>
               </div>
             </>
@@ -1069,7 +980,7 @@ function CategoryDetailView({
 
 // ── Crises Tab ─────────────────────────────────────────────────────────────────
 function CrisesTab() {
-  const { data, activeCrisis, setActiveCrisis } = useAppContext();
+  const { data, activeCrisis, setActiveCrisis, spikeMode, setSpikeMode } = useAppContext();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   // Build category list sorted by crisis count desc — must be before any early returns
@@ -1085,55 +996,97 @@ function CrisesTab() {
       .map(([cat, count]) => ({ cat, count }));
   }, [data.crises]);
 
+  // Spike mode toggle — always visible at top
+  const spikeModeToggle = (
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-cyan-500/10 shrink-0">
+      <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">Spikes</span>
+      <div className="flex rounded-md border border-cyan-500/20 overflow-hidden ml-auto">
+        <button
+          onClick={() => setSpikeMode("fundingGap")}
+          className={`px-2.5 py-1 text-[10px] font-mono transition-colors ${
+            spikeMode === "fundingGap"
+              ? "bg-cyan-500/20 text-cyan-300"
+              : "text-cyan-400/50 hover:bg-cyan-500/10"
+          }`}
+        >
+          Funding Gap
+        </button>
+        <button
+          onClick={() => setSpikeMode("severity")}
+          className={`px-2.5 py-1 text-[10px] font-mono transition-colors ${
+            spikeMode === "severity"
+              ? "bg-red-500/20 text-red-300"
+              : "text-cyan-400/50 hover:bg-cyan-500/10"
+          }`}
+        >
+          Severity
+        </button>
+      </div>
+    </div>
+  );
+
   // If a crisis is active, show its detail
   if (activeCrisis) {
     return (
-      <CrisisDetailView
-        crisis={activeCrisis}
-        onBack={() => setActiveCrisis(null)}
-      />
+      <div className="flex flex-col h-full min-h-0">
+        {spikeModeToggle}
+        <div className="flex-1 min-h-0">
+          <CrisisDetailView
+            crisis={activeCrisis}
+            onBack={() => setActiveCrisis(null)}
+          />
+        </div>
+      </div>
     );
   }
 
   // If a category is selected, show category detail
   if (selectedCategory) {
     return (
-      <CategoryDetailView
-        category={selectedCategory}
-        onBack={() => setSelectedCategory(null)}
-      />
+      <div className="flex flex-col h-full min-h-0">
+        {spikeModeToggle}
+        <div className="flex-1 min-h-0">
+          <CategoryDetailView
+            category={selectedCategory}
+            onBack={() => setSelectedCategory(null)}
+          />
+        </div>
+      </div>
     );
   }
 
   return (
-    <ScrollArea className="flex-1 min-h-0">
-      <div className="flex flex-col gap-1 px-2 pb-4 pt-1">
-        <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/40 px-1 pb-1">
-          Crisis Categories
-        </p>
-        {categoriesWithCounts.map(({ cat, count }) => (
-          <button
-            key={cat}
-            onClick={() => setSelectedCategory(cat)}
-            className="group flex items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition-all border border-red-500/10 hover:border-red-500/28 hover:bg-red-500/5 hover:shadow-[0_0_10px_rgba(255,30,30,0.07)]"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <span className="text-xl leading-none shrink-0">{getCategoryIcon(cat)}</span>
-              <div className="min-w-0">
-                <p className="text-sm font-medium text-foreground truncate">{cat}</p>
-                <p className="text-[10px] font-mono text-cyan-400/45 mt-0.5">
-                  {count} crisis{count !== 1 ? "es" : ""}
-                </p>
+    <div className="flex flex-col h-full min-h-0">
+      {spikeModeToggle}
+      <ScrollArea className="flex-1 min-h-0">
+        <div className="flex flex-col gap-1 px-2 pb-4 pt-1">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/40 px-1 pb-1">
+            Crisis Categories
+          </p>
+          {categoriesWithCounts.map(({ cat, count }) => (
+            <button
+              key={cat}
+              onClick={() => setSelectedCategory(cat)}
+              className="group flex items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition-all border border-red-500/10 hover:border-red-500/28 hover:bg-red-500/5 hover:shadow-[0_0_10px_rgba(255,30,30,0.07)]"
+            >
+              <div className="flex items-center gap-3 min-w-0">
+                <span className="text-xl leading-none shrink-0">{getCategoryIcon(cat)}</span>
+                <div className="min-w-0">
+                  <p className="text-sm font-medium text-foreground truncate">{cat}</p>
+                  <p className="text-[10px] font-mono text-cyan-400/45 mt-0.5">
+                    {count} crisis{count !== 1 ? "es" : ""}
+                  </p>
+                </div>
               </div>
-            </div>
-            <ChevronRight className="h-4 w-4 shrink-0 text-cyan-400/25 group-hover:text-cyan-400/55 transition-colors" />
-          </button>
-        ))}
-        {categoriesWithCounts.length === 0 && (
-          <p className="text-center text-sm text-cyan-400/40 font-mono py-8">No crises found</p>
-        )}
-      </div>
-    </ScrollArea>
+              <ChevronRight className="h-4 w-4 shrink-0 text-cyan-400/25 group-hover:text-cyan-400/55 transition-colors" />
+            </button>
+          ))}
+          {categoriesWithCounts.length === 0 && (
+            <p className="text-center text-sm text-cyan-400/40 font-mono py-8">No crises found</p>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
   );
 }
 
@@ -1382,53 +1335,6 @@ function CountriesTab() {
   );
 }
 
-// ── Scatter Tooltip ──────────────────────────────────────────────────────────
-function ScatterTooltip({ active, payload }: {
-  active?: boolean;
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  payload?: any[];
-}) {
-  if (!active || !payload?.length) return null;
-  const d = payload[0]?.payload as {
-    name: string;
-    severity: number;
-    percentFunded: number;
-    percentFundedAll: number;
-    requirements: number;
-    fundedOnAppeal: number;
-    fundedOffAppeal: number;
-    planLineCount: number;
-  } | undefined;
-  if (!d) return null;
-  return (
-    <div style={chartTooltipStyle}>
-      <p style={{ color: "rgba(0,220,255,0.95)", fontWeight: 700, marginBottom: 4 }}>{d.name}</p>
-      <p style={{ color: "rgba(0,200,255,0.75)", fontSize: 10, fontFamily: "monospace" }}>
-        Severity: {d.severity.toFixed(1)}
-      </p>
-      <p style={{ color: "rgba(248,113,113,0.9)", fontSize: 10, fontFamily: "monospace" }}>
-        % Funded (on-appeal): {d.percentFunded}%
-      </p>
-      {d.fundedOffAppeal > 0 && (
-        <p style={{ color: "rgba(0,200,255,0.6)", fontSize: 10, fontFamily: "monospace" }}>
-          Off-appeal: ${d.fundedOffAppeal}M (all-rows: {d.percentFundedAll}%)
-        </p>
-      )}
-      <p style={{ color: "rgba(0,200,255,0.55)", fontSize: 10, fontFamily: "monospace" }}>
-        Requirements: ${d.requirements}M
-      </p>
-      <p style={{ color: "rgba(0,200,255,0.4)", fontSize: 10, fontFamily: "monospace" }}>
-        Funded (on-appeal): ${d.fundedOnAppeal}M
-      </p>
-      {d.planLineCount > 0 && (
-        <p style={{ color: "rgba(0,200,255,0.35)", fontSize: 9, fontFamily: "monospace" }}>
-          {d.planLineCount} plan line{d.planLineCount !== 1 ? "s" : ""}
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ── Global Tab ─────────────────────────────────────────────────────────────────
 function StatCard({ label, value, className, tip }: { label: string; value: string; className?: string; tip?: string }) {
   return (
@@ -1466,26 +1372,6 @@ function GlobalTab() {
   }, [data.countries]);
 
       const fundingGapData = fundingGapAllData.slice(0, 10);
-
-  const scatterData = useMemo(() => {
-    return Object.values(data.countries)
-      .filter(c => c.severity && c.overallFunding && c.overallFunding.totalRequirements > 0)
-      .map(c => {
-        const reqM = c.overallFunding!.totalRequirements / 1_000_000;
-        return {
-          name: c.name,
-          severity: c.severity!.severityIndex,
-          percentFunded: Math.round(c.overallFunding!.percentFunded),
-          percentFundedAll: Math.round(c.overallFunding!.percentFundedAll),
-          requirements: Math.round(reqM),
-          // Log-scale for bubble sizing so small/medium crises remain visible
-          logRequirements: Math.log10(1 + reqM),
-          fundedOnAppeal: Math.round(c.overallFunding!.totalFunding / 1_000_000),
-          fundedOffAppeal: Math.round(c.overallFunding!.offAppealFunding / 1_000_000),
-          planLineCount: c.overallFunding!.planLines?.length ?? 0,
-        };
-      });
-  }, [data.countries]);
 
   // Underlooked countries table: Neglect Index v2 ranking
   const neglectCountryRanking = useMemo(() => {
@@ -1616,7 +1502,7 @@ function GlobalTab() {
             className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Global
+            Overview
           </button>
           <span className="text-cyan-500/30 text-xs">/</span>
           <span className="text-[11px] font-mono text-red-300/80 truncate">All Underlooked Crises</span>
@@ -1662,7 +1548,7 @@ function GlobalTab() {
               <div className="flex items-center justify-between gap-2 px-1">
                 <div className="flex items-center gap-2">
                   <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                  <HoverTip tip="Most overlooked crises right now, combining severity, unmet funding, and crisis scale. Higher score means less attention relative to need.">
+                  <HoverTip tip="Crises receiving the least global attention relative to their severity and scale. Higher score = greater mismatch between need and funding.">
                     <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
                       Underlooked Crises (Top 10)
                     </p>
@@ -1801,77 +1687,6 @@ function GlobalTab() {
           </>
         )}
 
-        {/* ── Severity vs Funding Scatter ──────────────────────────────────── */}
-        {scatterData.length > 0 && (
-          <>
-            <Separator className="opacity-20 my-2" />
-            <div className="space-y-2">
-              <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
-                Severity vs Funding Disparity
-              </p>
-              <div className="h-72 w-full">
-                <ResponsiveContainer width="100%" height="100%">
-                  <ScatterChart margin={{ top: 12, right: 16, bottom: 36, left: 12 }}>
-                    <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" />
-                    <XAxis
-                      type="number"
-                      dataKey="severity"
-                      name="Severity"
-                      domain={[0, 5]}
-                      tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-                      tickLine={false}
-                      axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
-                      label={{
-                        value: "INFORM Severity →",
-                        position: "insideBottom",
-                        offset: -22,
-                        style: { fontSize: 9, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace" },
-                      }}
-                    />
-                    <YAxis
-                      type="number"
-                      dataKey="percentFunded"
-                      name="% Funded"
-                      domain={[0, 100]}
-                      width={48}
-                      tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-                      tickFormatter={(v) => `${v}%`}
-                      tickLine={false}
-                      axisLine={false}
-                      label={{
-                        value: "% Funded (on-appeal)",
-                        angle: -90,
-                        position: "insideLeft",
-                        offset: 8,
-                        style: { fontSize: 8, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace", textAnchor: "middle" },
-                      }}
-                    />
-                    {/* Log-scale bubble size so small/medium crises remain visible */}
-                    <ZAxis type="number" dataKey="logRequirements" range={[30, 450]} name="Requirements (log scale)" />
-                    {/* Reference lines for decision-grade reading */}
-                    <ReferenceLine x={3.5} stroke="rgba(248,113,113,0.3)" strokeDasharray="4 3" label={{ value: "High Severity", position: "top", style: { fontSize: 7, fill: "rgba(248,113,113,0.5)", fontFamily: "monospace" } }} />
-                    <ReferenceLine y={50} stroke="rgba(34,211,238,0.3)" strokeDasharray="4 3" label={{ value: "50% Funded", position: "right", style: { fontSize: 7, fill: "rgba(34,211,238,0.5)", fontFamily: "monospace" } }} />
-                    <Tooltip
-                      cursor={{ strokeDasharray: "3 3", stroke: "rgba(0,200,255,0.25)" }}
-                      content={<ScatterTooltip />}
-                    />
-                    <Scatter
-                      data={scatterData}
-                      fill="#f87171"
-                      fillOpacity={0.65}
-                      stroke="#b91c1c"
-                      strokeWidth={1}
-                    />
-                  </ScatterChart>
-                </ResponsiveContainer>
-              </div>
-              <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
-                Bubble size = requirements (log scale). Bottom-right quadrant = high severity, low funding — the most neglected crises.
-              </p>
-            </div>
-          </>
-        )}
-
         {/* ── Underlooked Countries Table ──────────────────────────────────── */}
         {neglectCountryRanking.length > 0 && (
           <>
@@ -1879,7 +1694,7 @@ function GlobalTab() {
             <div className="space-y-2">
               <div className="flex items-center gap-2 px-1">
                 <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                <HoverTip tip="Ranks how overlooked each country's crisis is. Accounts for severity, funding shortfall, and the scale of humanitarian need. Higher = more underserved.">
+                <HoverTip tip="Countries where crisis severity is high but funding falls short. Ranked by a composite of severity, funding gap, and scale of need.">
                   <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
                     Underlooked Countries (Severity-Adjusted)
                   </p>
@@ -2021,7 +1836,7 @@ export default function AppSidebar() {
                 className="text-xs font-mono data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-300 data-[state=active]:shadow-[0_0_8px_rgba(0,200,255,0.2)] text-cyan-400/50"
               >
                 <Globe2 className="h-3.5 w-3.5 mr-1.5" />
-                Global
+                Overview
               </TabsTrigger>
               <TabsTrigger
                 value="crises"

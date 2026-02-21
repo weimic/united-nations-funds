@@ -23,6 +23,12 @@ interface AppContextType {
   /** ISO3 to rotate globe to face */
   globeFocusIso3: string | null;
   setGlobeFocusIso3: (iso3: string | null) => void;
+  /** What the spikes represent: funding gap or severity */
+  spikeMode: "fundingGap" | "severity";
+  setSpikeMode: (mode: "fundingGap" | "severity") => void;
+  /** Map visualization style: dot cloud or solid country fills */
+  mapStyle: "dots" | "solid";
+  setMapStyle: (style: "dots" | "solid") => void;
   /** Get the active crisis entry for a specific country */
   getCrisisEntry: (iso3: string) => CrisisCountryEntry | null;
   /** Get unified country data */
@@ -48,6 +54,8 @@ export function AppProvider({
   const [crisisModalOpen, setCrisisModalOpen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
   const [globeFocusIso3, setGlobeFocusIso3] = useState<string | null>(null);
+  const [spikeMode, setSpikeMode] = useState<"fundingGap" | "severity">("fundingGap");
+  const [mapStyle, setMapStyle] = useState<"dots" | "solid">("dots");
 
   const activeCrisisCountryCodes = new Set(
     activeCrisis?.countries.map((c) => c.iso3) ?? []
@@ -96,6 +104,10 @@ export function AppProvider({
         setActiveCategories,
         globeFocusIso3,
         setGlobeFocusIso3,
+        spikeMode,
+        setSpikeMode,
+        mapStyle,
+        setMapStyle,
         getCrisisEntry,
         getCountry,
         activeCrisisCountryCodes,

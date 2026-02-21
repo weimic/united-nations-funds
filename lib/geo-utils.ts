@@ -1,5 +1,5 @@
 import * as THREE from "three";
-import type { GeoData } from "./types";
+import type { GeoData, GeoFeature } from "./types";
 
 const GLOBE_RADIUS = 1;
 
@@ -263,4 +263,172 @@ export function polygonToGlobePoints(
     points.push(latLonToVector3(lat, lon, radius));
   }
   return points;
+}
+
+// ── Point-in-polygon utilities ─────────────────────────────────────────────────
+
+/**
+ * Ray-casting point-in-polygon test.
+ * Tests if a point (testLon, testLat) is inside a closed 2D ring
+ * defined by [lon, lat] coordinate pairs.
+ */
+export function pointInRing(
+  testLon: number,
+  testLat: number,
+  ring: number[][]
+): boolean {
+  let inside = false;
+  for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) {
+    const xi = ring[i][0],
+      yi = ring[i][1];
+    const xj = ring[j][0],
+      yj = ring[j][1];
+    if (
+      yi > testLat !== yj > testLat &&
+      testLon < ((xj - xi) * (testLat - yi)) / (yj - yi) + xi
+    ) {
+      inside = !inside;
+    }
+  }
+  return inside;
+}
+
+/**
+ * Check if a point is inside a GeoJSON Polygon or MultiPolygon geometry.
+ * Handles holes (inner rings) correctly.
+ */
+export function pointInFeature(
+  lon: number,
+  lat: number,
+  geometry: { type: string; coordinates: number[][][] | number[][][][] }
+): boolean {
+  if (geometry.type === "Polygon") {
+    const rings = geometry.coordinates as number[][][];
+    if (!pointInRing(lon, lat, rings[0])) return false;
+    for (let i = 1; i < rings.length; i++) {
+      if (pointInRing(lon, lat, rings[i])) return false;
+    }
+    return true;
+  } else if (geometry.type === "MultiPolygon") {
+    const polys = geometry.coordinates as number[][][][];
+    for (const poly of polys) {
+      if (!pointInRing(lon, lat, poly[0])) continue;
+      let inHole = false;
+      for (let i = 1; i < poly.length; i++) {
+        if (pointInRing(lon, lat, poly[i])) {
+          inHole = true;
+          break;
+        }
+      }
+      if (!inHole) return true;
+    }
+    return false;
+  }
+  return false;
+}
+
+/** Pre-computed bounding box for a GeoJSON feature for fast spatial filtering. */
+export interface FeatureBBox {
+  feature: GeoFeature;
+  minLon: number;
+  maxLon: number;
+  minLat: number;
+  maxLat: number;
+}
+
+/**
+ * Pre-compute axis-aligned bounding boxes for every feature.
+ * Used to accelerate point-in-polygon lookups via spatial filtering.
+ */
+export function buildFeatureBBoxes(features: GeoFeature[]): FeatureBBox[] {
+  return features.map((feature) => {
+    let minLon = Infinity,
+      maxLon = -Infinity;
+    let minLat = Infinity,
+      maxLat = -Infinity;
+    const polys =
+      feature.geometry.type === "Polygon"
+        ? [feature.geometry.coordinates as number[][][]]
+        : (feature.geometry.coordinates as number[][][][]);
+    for (const poly of polys) {
+      for (const ring of poly) {
+        for (const pt of ring) {
+          if (pt[0] < minLon) minLon = pt[0];
+          if (pt[0] > maxLon) maxLon = pt[0];
+          if (pt[1] < minLat) minLat = pt[1];
+          if (pt[1] > maxLat) maxLat = pt[1];
+        }
+      }
+    }
+    return { feature, minLon, maxLon, minLat, maxLat };
+  });
+}
+
+/**
+ * Find which country feature contains the given (lon, lat) point.
+ * Uses bounding-box pre-filtering then full polygon test.
+ */
+export function findCountryAtPoint(
+  lon: number,
+  lat: number,
+  bboxes: FeatureBBox[]
+): GeoFeature | null {
+  for (const { feature, minLon, maxLon, minLat, maxLat } of bboxes) {
+    if (lon < minLon || lon > maxLon || lat < minLat || lat > maxLat) continue;
+    if (pointInFeature(lon, lat, feature.geometry)) return feature;
+  }
+  return null;
+}
+
+/**
+ * Build a solid-fill equirectangular country texture.
+ * Each country is filled with the color from countryColorMap.
+ * Countries not in the map default to white (neutral).
+ */
+export function buildSolidCountryTexture(
+  geoData: GeoData,
+  countryColorMap: Record<string, string>,
+  oceanColor: string = "#0a1628",
+  width = 4096,
+  height = 2048
+): THREE.CanvasTexture | null {
+  if (typeof document === "undefined") return null;
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return null;
+
+  ctx.fillStyle = oceanColor;
+  ctx.fillRect(0, 0, width, height);
+
+  const lonToX = (lon: number) => ((lon + 180) / 360) * width;
+  const latToY = (lat: number) => ((90 - lat) / 180) * height;
+
+  for (const feature of geoData.features) {
+    const color = countryColorMap[feature.id] ?? "#ffffff";
+    ctx.fillStyle = color;
+
+    const polys =
+      feature.geometry.type === "Polygon"
+        ? [feature.geometry.coordinates as number[][][]]
+        : (feature.geometry.coordinates as number[][][][]);
+
+    for (const poly of polys) {
+      const ring = poly[0];
+      if (ring.length < 3) continue;
+      ctx.beginPath();
+      ctx.moveTo(lonToX(ring[0][0]), latToY(ring[0][1]));
+      for (let i = 1; i < ring.length; i++) {
+        ctx.lineTo(lonToX(ring[i][0]), latToY(ring[i][1]));
+      }
+      ctx.closePath();
+      ctx.fill();
+    }
+  }
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.needsUpdate = true;
+  return texture;
 }
