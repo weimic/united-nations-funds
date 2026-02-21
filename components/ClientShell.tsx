@@ -3,12 +3,11 @@
 import dynamic from "next/dynamic";
 import { AppProvider } from "@/lib/app-context";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
-import AppSidebar from "@/components/AppSidebar";
-import CrisisModal from "@/components/CrisisModal";
+import AppSidebar from "@/components/sidebar/AppSidebar";
 import type { SerializedData } from "@/lib/types";
 
 // Dynamic import Globe to avoid SSR issues with Three.js
-const Globe = dynamic(() => import("@/components/Globe"), {
+const Globe = dynamic(() => import("@/components/3d/Globe"), {
   ssr: false,
   loading: () => (
     <div className="flex h-full w-full items-center justify-center bg-black">
@@ -37,7 +36,6 @@ export default function ClientShell({ data }: ClientShellProps) {
           <main className="relative flex-1 overflow-hidden">
             <SidebarTrigger className="absolute top-4 right-4 z-40 bg-black/80 backdrop-blur-sm border border-cyan-500/30 shadow-[0_0_12px_rgba(0,200,255,0.15)] text-cyan-400 hover:bg-black/90 hover:border-cyan-400/50" />
             <Globe geoData={data.geoData} />
-            <CrisisModal />
           </main>
           <AppSidebar />
         </div>

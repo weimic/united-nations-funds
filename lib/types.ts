@@ -73,11 +73,6 @@ export interface UnifiedCountryData {
   severity: InformSeverity | null;
   overallFunding: OverallFunding | null;
   crisisAllocations: CrisisCountryAllocation | null;
-  historicalData?: Record<number, {
-    severity: InformSeverity | null;
-    overallFunding: OverallFunding | null;
-    crisisAllocations: CrisisCountryAllocation | null;
-  }>;
 }
 
 /** Crisis-level data grouping countries */
@@ -86,9 +81,6 @@ export interface CrisisData {
   crisisId: string;
   countries: CrisisCountryEntry[];
   categories: string[];
-  historicalData?: Record<number, {
-    countries: CrisisCountryEntry[];
-  }>;
 }
 
 /** Global aggregate statistics */
@@ -107,17 +99,6 @@ export interface GlobalStats {
   percentFundedAll: number;
   countriesInCrisis: number;
   activeCrisisCount: number;
-  historicalData?: Record<number, {
-    totalRequirements: number;
-    totalFunding: number;
-    totalOffAppealFunding: number;
-    totalFundingAll: number;
-    totalCBPFAllocations: number;
-    percentFunded: number;
-    percentFundedAll: number;
-    countriesInCrisis: number;
-    activeCrisisCount: number;
-  }>;
 }
 
 /** A country entry within a crisis context */
