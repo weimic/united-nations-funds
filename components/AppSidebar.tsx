@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo } from "react";
+import { useState, useMemo, type ReactNode } from "react";
 import { useAppContext } from "@/lib/app-context";
 import {
   Sidebar,
@@ -18,13 +18,21 @@ import {
   AlertTriangle,
   Globe2,
   Search,
+  SlidersHorizontal,
   MapPin,
   ArrowLeft,
   DollarSign,
   BarChart3,
   ChevronRight,
   TrendingDown,
+  Info,
 } from "lucide-react";
+import {
+  Tooltip as UITooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 import {
   Bar,
   XAxis,
@@ -50,6 +58,69 @@ import { formatDollars } from "@/lib/utils";
 
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
+// ── HoverTip (acronym / concept tooltip) ──────────────────────────────────────
+function HoverTip({ children, tip }: { children: ReactNode; tip: string }) {
+  return (
+    <TooltipProvider delayDuration={200}>
+      <UITooltip>
+        <TooltipTrigger asChild>
+          <span className="inline-flex items-center gap-0.5 cursor-help">
+            {children}
+            <Info className="h-2.5 w-2.5 text-cyan-400/30 hover:text-cyan-400/70 transition-colors" />
+          </span>
+        </TooltipTrigger>
+        <TooltipContent
+          side="top"
+          className="max-w-[260px] text-[11px] bg-black/95 border-cyan-500/30 text-cyan-100/90 leading-snug z-[100] p-2.5 rounded-md shadow-[0_0_14px_rgba(0,200,255,0.14)]"
+        >
+          {tip}
+        </TooltipContent>
+      </UITooltip>
+    </TooltipProvider>
+  );
+}
+
+// ── Funding Circle (radial progress) ──────────────────────────────────────────
+function FundingCircle({
+  pct,
+  label,
+  amount,
+  color,
+}: {
+  pct: number;
+  label: string;
+  amount: string;
+  color: string;
+}) {
+  const r = 20;
+  const circumference = 2 * Math.PI * r;
+  const dash = Math.max(0, Math.min(pct / 100, 1)) * circumference;
+  return (
+    <div className="flex flex-col items-center gap-0.5">
+      <div className="relative w-[60px] h-[60px]">
+        <svg viewBox="0 0 48 48" className="w-full h-full -rotate-90">
+          <circle cx="24" cy="24" r={r} fill="none" stroke="rgba(255,255,255,0.07)" strokeWidth="3.5" />
+          <circle
+            cx="24" cy="24" r={r} fill="none"
+            stroke={color} strokeWidth="3.5"
+            strokeDasharray={`${dash.toFixed(2)} ${circumference.toFixed(2)}`}
+            strokeLinecap="round"
+          />
+        </svg>
+        <div className="absolute inset-0 flex items-center justify-center">
+          <span className="text-[10px] font-mono font-bold" style={{ color }}>
+            {Math.round(pct)}%
+          </span>
+        </div>
+      </div>
+      <span className="text-[9px] font-mono text-muted-foreground text-center leading-tight">{label}</span>
+      <span className="text-[9px] font-mono text-center font-medium truncate max-w-[64px]" style={{ color }}>
+        {amount}
+      </span>
+    </div>
+  );
+}
+
 function getSeverityBadgeColor(category: string): string {
   switch (category) {
     case "Very High": return "bg-red-600/90 text-white border-red-500/50";
@@ -71,6 +142,7 @@ function getSeverityColorClass(cat: string): string {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 function getCategoryIcon(_cat: string): string {
   return "";
 }
@@ -99,7 +171,8 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
       const costPerReached = c.reachedPeople > 0 ? c.totalAllocations / c.reachedPeople : 0;
       const reachPct = c.targetedPeople > 0 ? Math.round((c.reachedPeople / c.targetedPeople) * 100) : 0;
       return {
-        name: c.cluster.length > 14 ? c.cluster.slice(0, 14) + "…" : c.cluster,
+        name: c.cluster.length > 10 ? c.cluster.slice(0, 10) + "…" : c.cluster,
+        fullName: c.cluster,
         cbpf: Math.round(c.totalAllocations / 1_000),
         costPerTargeted: Math.round(costPerTargeted * 10) / 10,
         costPerReached: Math.round(costPerReached * 10) / 10,
@@ -122,13 +195,23 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartData}
-            margin={{ top: 12, right: 52, bottom: 72, left: 58 }}
+            margin={{ top: 12, right: 52, bottom: 24, left: 58 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-              angle={-42}
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              tick={(props: any) => {
+                const full = chartData.find((d) => d.name === props.payload?.value)?.fullName ?? props.payload?.value ?? "";
+                return (
+                  <g transform={`translate(${props.x},${props.y})`}>
+                    <title>{full}</title>
+                    <text x={0} y={0} dy={12} textAnchor="middle" fontSize={8} fill="rgba(0,200,255,0.55)" fontFamily="monospace">
+                      {props.payload?.value}
+                    </text>
+                  </g>
+                );
+              }}
               textAnchor="end"
               interval={0}
               tickLine={false}
@@ -180,7 +263,9 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
       {deliverySummary.length > 0 && (
         <div className="space-y-1 pt-1">
           <p className="text-[9px] font-mono uppercase tracking-widest text-cyan-400/50">
-            Delivery Rate by Cluster
+            <HoverTip tip="Percentage of targeted people actually reached by CBPF-funded aid. Lower rates may indicate delivery challenges.">
+              Delivery Rate by Cluster
+            </HoverTip>
           </p>
           {deliverySummary
             .sort((a, b) => a.reachPct - b.reachPct)
@@ -220,10 +305,52 @@ function CountryDetailView({
   country: UnifiedCountryData;
   onBack: () => void;
 }) {
-  const { getAllCrisesForCountry, setActiveCrisis, setSidebarTab } = useAppContext();
+  const { data, getAllCrisesForCountry, setActiveCrisis, setSidebarTab } = useAppContext();
   const sev = country.severity;
   const overall = country.overallFunding;
   const allCrises = getAllCrisesForCountry(country.iso3);
+
+  const rankings = useMemo(() => {
+    if (!overall) return null;
+    const allC = Object.values(data.countries).filter(
+      c => c.overallFunding && c.overallFunding.totalRequirements > 0
+    );
+    // Absolute gap rank (on-appeal)
+    const gapSorted = [...allC].sort(
+      (a, b) =>
+        (b.overallFunding!.totalRequirements - b.overallFunding!.totalFunding) -
+        (a.overallFunding!.totalRequirements - a.overallFunding!.totalFunding)
+    );
+    const gapRank = gapSorted.findIndex(c => c.iso3 === country.iso3) + 1;
+    const absGap = Math.max(0, overall.totalRequirements - overall.totalFunding);
+    // Neglect index rank
+    const withNI = allC
+      .filter(c => c.severity)
+      .map(c => ({
+        iso3: c.iso3,
+        ni:
+          (c.severity!.severityIndex / 5) *
+          (1 - c.overallFunding!.percentFunded / 100) *
+          Math.log10(1 + c.overallFunding!.totalRequirements / 1_000_000),
+      }))
+      .sort((a, b) => b.ni - a.ni);
+    const niSelf = sev
+      ? (sev.severityIndex / 5) *
+        (1 - overall.percentFunded / 100) *
+        Math.log10(1 + overall.totalRequirements / 1_000_000)
+      : 0;
+    const niRank = withNI.findIndex(c => c.iso3 === country.iso3) + 1;
+    const niMax = withNI[0]?.ni ?? 1;
+    return {
+      absGap,
+      gapRank: gapRank > 0 ? gapRank : null,
+      gapTotal: gapSorted.length,
+      neglectIndex: niSelf,
+      niRank: niRank > 0 ? niRank : null,
+      niTotal: withNI.length,
+      niMax,
+    };
+  }, [country, data, overall, sev]);
 
   return (
     <div className="flex flex-col h-full min-h-0">
@@ -249,34 +376,100 @@ function CountryDetailView({
             </div>
           </div>
 
+          {/* ── Severity (no drivers here — moved to bottom) ──────────────── */}
           {sev && (
             <div className="space-y-2">
               <div className="flex items-center gap-2">
                 <AlertTriangle className="h-3.5 w-3.5 text-red-400/70" />
-                <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-                  INFORM Severity
-                </span>
+                <HoverTip tip="Severity score from 0 to 5. Higher means people face more intense, complex humanitarian conditions.">
+                  <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+                    INFORM Severity
+                  </span>
+                </HoverTip>
               </div>
               <div className="flex items-center gap-3">
                 <Badge variant="outline" className={`text-sm px-2.5 py-0.5 font-bold font-mono ${getSeverityColorClass(sev.severityCategory)}`}>
-                  {sev.severityIndex.toFixed(1)}
+                  {sev.severityIndex.toFixed(1)}<span className="text-[10px] opacity-50 font-normal">/5</span>
                 </Badge>
                 <span className="text-sm text-muted-foreground">{sev.severityCategory}</span>
               </div>
-              <div className="h-1.5 rounded-full bg-muted/30 overflow-hidden">
-                <div
-                  className="h-full rounded-full transition-all bg-gradient-to-r from-blue-500 via-amber-500 to-red-500"
-                  style={{ width: `${(sev.severityIndex / 5) * 100}%` }}
-                />
-              </div>
-              {sev.drivers && (
-                <p className="text-[10px] text-muted-foreground font-mono">
-                  Drivers: {sev.drivers}
-                </p>
-              )}
             </div>
           )}
 
+          {/* ── Funding Gap & Neglect (moved up, beneath severity) ─────── */}
+          {rankings && (
+            <>
+              <Separator className="opacity-20" />
+              <div className="space-y-2">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">Funding Gap &amp; Neglect</p>
+                {/* Stacked bar matching global page style */}
+                {overall && (() => {
+                  const onAppealM = Math.round(overall.totalFunding / 1_000_000);
+                  const offAppealM = Math.round(overall.offAppealFunding / 1_000_000);
+                  const gapM = Math.round(Math.max(0, overall.totalRequirements - overall.totalFundingAll) / 1_000_000);
+                  const total = onAppealM + offAppealM + gapM;
+                  if (total === 0) return null;
+                  const onPct = (onAppealM / total) * 100;
+                  const offPct = (offAppealM / total) * 100;
+                  return (
+                    <div className="rounded border border-red-500/15 bg-black/30 p-2.5 space-y-1.5">
+                      <div className="flex items-center justify-between mb-1">
+                        <span className="text-[10px] font-mono text-muted-foreground">
+                          Req: {formatDollars(overall.totalRequirements)}
+                        </span>
+                        {rankings.gapRank && (
+                          <span className="text-[9px] font-mono text-red-400/60">
+                            Gap #{rankings.gapRank} / {rankings.gapTotal}
+                          </span>
+                        )}
+                      </div>
+                      <div className="h-3 rounded-full bg-muted/20 overflow-hidden flex">
+                        {onPct > 0 && (
+                          <div className="h-full bg-cyan-500" style={{ width: `${onPct}%` }} title={`On-appeal: $${onAppealM}M`} />
+                        )}
+                        {offPct > 0 && (
+                          <div className="h-full bg-cyan-800" style={{ width: `${offPct}%` }} title={`Off-appeal: $${offAppealM}M`} />
+                        )}
+                        <div className="h-full bg-red-500 flex-1" title={`Gap: $${gapM}M`} />
+                      </div>
+                      <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground flex-wrap">
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-500 inline-block" /> On-appeal: {formatDollars(overall.totalFunding)}</span>
+                        {overall.offAppealFunding > 0 && (
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-cyan-800 inline-block" /> Off-appeal: {formatDollars(overall.offAppealFunding)}</span>
+                        )}
+                        <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-red-500/75 inline-block" /> Gap: <strong className="text-red-400">{formatDollars(rankings.absGap)}</strong></span>
+                      </div>
+                    </div>
+                  );
+                })()}
+                {rankings.neglectIndex > 0 && (
+                  <div className="rounded border border-amber-500/15 bg-amber-500/5 p-2.5 space-y-1.5">
+                    <div className="flex items-center justify-between">
+                      <HoverTip tip="How overlooked this crisis is: severity × unmet funding × scale of needs. Higher score means bigger mismatch between need and attention.">
+                        <span className="text-[10px] font-mono text-muted-foreground">Neglect Index</span>
+                      </HoverTip>
+                      {rankings.niRank && (
+                        <span className="text-[9px] font-mono text-amber-400/60">
+                          #{rankings.niRank} / {rankings.niTotal}
+                        </span>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <div className="flex-1 h-1.5 rounded-full bg-muted/20 overflow-hidden">
+                        <div
+                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-red-500"
+                          style={{ width: `${Math.min((rankings.neglectIndex / (rankings.niMax || 1)) * 100, 100)}%` }}
+                        />
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-amber-400">{rankings.neglectIndex.toFixed(3)}</span>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
+          {/* ── Active Crises ─────────────────────────────────────────── */}
           {allCrises.length > 0 && (
             <>
               <Separator className="opacity-20" />
@@ -332,33 +525,44 @@ function CountryDetailView({
             </>
           )}
 
+          {/* ── Overall Funding ───────────────────────────────────────── */}
           {overall && (
             <>
               <Separator className="opacity-20" />
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <BarChart3 className="h-3.5 w-3.5 text-cyan-400/60" />
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-                    Overall Funding (FTS)
-                  </span>
+                  <HoverTip tip="UN OCHA funding tracker. On-Appeal = funding for formal humanitarian plans. Off-Appeal = additional funding outside plans.">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+                      Overall Funding (FTS)
+                    </span>
+                  </HoverTip>
                 </div>
-                <div className="space-y-1">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-muted-foreground">Requirements</span>
-                    <span className="text-[11px] font-medium font-mono">{formatDollars(overall.totalRequirements)}</span>
-                  </div>
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] text-muted-foreground">Funded</span>
-                    <span className={`text-[11px] font-medium font-mono ${overall.percentFunded < 50 ? "text-red-400" : "text-cyan-400"}`}>
-                      {formatDollars(overall.totalFunding)}
-                    </span>
-                  </div>
-                  <div className="flex items-center gap-2 pt-1">
-                    <Progress value={Math.min(overall.percentFunded, 100)} className="h-1.5 flex-1" />
-                    <span className={`text-xs font-bold font-mono ${overall.percentFunded < 50 ? "text-red-400" : "text-cyan-400"}`}>
-                      {overall.percentFunded.toFixed(0)}%
-                    </span>
-                  </div>
+                <div className="flex items-center justify-between text-[10px] font-mono">
+                  <span className="text-muted-foreground">Requirements</span>
+                  <span className="text-foreground font-medium">{formatDollars(overall.totalRequirements)}</span>
+                </div>
+                <div className="flex justify-around items-start py-1 gap-1">
+                  <FundingCircle
+                    pct={Math.min(overall.percentFunded, 100)}
+                    label="On-Appeal"
+                    amount={formatDollars(overall.totalFunding)}
+                    color={overall.percentFunded < 50 ? "#ef4444" : "#22d3ee"}
+                  />
+                  {overall.offAppealFunding > 0 && (
+                    <FundingCircle
+                      pct={overall.totalRequirements > 0 ? Math.min((overall.offAppealFunding / overall.totalRequirements) * 100, 100) : 0}
+                      label="Off-Appeal"
+                      amount={formatDollars(overall.offAppealFunding)}
+                      color="#0e7490"
+                    />
+                  )}
+                  <FundingCircle
+                    pct={Math.min(overall.percentFundedAll, 100)}
+                    label="All"
+                    amount={`${overall.percentFundedAll}%`}
+                    color={overall.percentFundedAll < 50 ? "#f97316" : "#06b6d4"}
+                  />
                 </div>
               </div>
             </>
@@ -429,17 +633,37 @@ function CountryDetailView({
             </>
           )}
 
+          {/* ── CBPF by Cluster ───────────────────────────────────────── */}
           {allCrises[0]?.entry.crisisAllocation?.clusters && allCrises[0].entry.crisisAllocation.clusters.length > 0 && (
             <>
               <Separator className="opacity-20" />
               <div className="space-y-2">
                 <div className="flex items-center gap-2">
                   <DollarSign className="h-3.5 w-3.5 text-cyan-400" />
-                  <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-                    CBPF by Cluster
-                  </span>
+                  <HoverTip tip="UN-managed pooled funds that provide fast, flexible humanitarian aid directly to local responders in-country.">
+                    <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+                      CBPF by Cluster
+                    </span>
+                  </HoverTip>
                 </div>
                 <CBPFClusterChart clusters={allCrises[0].entry.crisisAllocation.clusters} />
+              </div>
+            </>
+          )}
+
+          {/* ── Drivers (moved to bottom) ─────────────────────────────── */}
+          {sev && sev.drivers && sev.drivers.trim() && (
+            <>
+              <Separator className="opacity-20" />
+              <div className="space-y-2">
+                <span className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">Crisis Drivers</span>
+                <div className="flex flex-wrap gap-1 items-center">
+                  {sev.drivers.trim().split(/[,/]+/).map(s => s.trim()).filter(Boolean).map((d, i) => (
+                    <span key={i} className="text-[9px] font-mono bg-amber-500/10 border border-amber-500/20 text-amber-400/80 rounded px-1.5 py-0.5">
+                      {d}
+                    </span>
+                  ))}
+                </div>
               </div>
             </>
           )}
@@ -460,32 +684,31 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
   const { data } = useAppContext();
 
   const chartData = useMemo(() => {
-    const clusterMap = new Map<string, { allocations: number; reached: number; targeted: number }>();
+    const clusterMap = new Map<string, { allocations: number; reached: number; targetedPeople: number }>();
     for (const entry of crisis.countries) {
       const country = data.countries[entry.iso3];
       if (!country?.crisisAllocations) continue;
       for (const cluster of country.crisisAllocations.clusters) {
         const key = cluster.cluster;
-        const existing = clusterMap.get(key) ?? { allocations: 0, reached: 0, targeted: 0 };
+        const existing = clusterMap.get(key) ?? { allocations: 0, reached: 0, targetedPeople: 0 };
         existing.allocations += cluster.totalAllocations;
         existing.reached += cluster.reachedPeople;
-        existing.targeted += cluster.targetedPeople;
+        existing.targetedPeople += cluster.targetedPeople;
         clusterMap.set(key, existing);
       }
     }
-    return [...clusterMap.entries()]
-      .sort((a, b) => b[1].allocations - a[1].allocations)
-      .slice(0, 8)
-      .map(([name, v]) => {
-        const costPerTargeted = v.targeted > 0 ? v.allocations / v.targeted : 0;
-        const costPerReached = v.reached > 0 ? v.allocations / v.reached : 0;
-        return {
-          name: name.length > 14 ? name.slice(0, 14) + "…" : name,
-          cbpf: Math.round(v.allocations / 1_000),
-          costPerTargeted: Math.round(costPerTargeted * 10) / 10,
-          costPerReached: Math.round(costPerReached * 10) / 10,
-        };
-      });
+    return [...clusterMap.entries()].map(([k, v]) => {
+      const costPerTargeted = v.targetedPeople > 0 ? v.allocations / v.targetedPeople : 0;
+      const costPerReached = v.reached > 0 ? v.allocations / v.reached : 0;
+      const name = k.length > 10 ? k.slice(0, 10) + "…" : k;
+      return {
+        name,
+        fullName: k,
+        cbpf: Math.round(v.allocations / 1_000),
+        costPerTargeted: Math.round(costPerTargeted * 10) / 10,
+        costPerReached: Math.round(costPerReached * 10) / 10,
+      };
+    });
   }, [crisis, data.countries]);
 
   if (chartData.length === 0) return null;
@@ -499,14 +722,23 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
         <ResponsiveContainer width="100%" height="100%">
           <ComposedChart
             data={chartData}
-            margin={{ top: 12, right: 52, bottom: 72, left: 58 }}
+            margin={{ top: 12, right: 52, bottom: 24, left: 58 }}
           >
             <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
             <XAxis
               dataKey="name"
-              tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-              angle={-42}
-              textAnchor="end"
+              // eslint-disable-next-line @typescript-eslint/no-explicit-any
+              tick={(props: any) => {
+                const full = chartData.find((d) => d.name === props.payload?.value)?.fullName ?? props.payload?.value ?? "";
+                return (
+                  <g transform={`translate(${props.x},${props.y})`}>
+                    <title>{full}</title>
+                    <text x={0} y={0} dy={12} textAnchor="middle" fontSize={8} fill="rgba(0,200,255,0.55)" fontFamily="monospace">
+                      {props.payload?.value}
+                    </text>
+                  </g>
+                );
+              }}
               interval={0}
               tickLine={false}
               axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
@@ -551,87 +783,6 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
             <Bar yAxisId="left" dataKey="cbpf" name="CBPF ($K)" fill="#22d3ee" radius={[3, 3, 0, 0]} opacity={0.85} />
             <Line yAxisId="right" type="monotone" dataKey="costPerReached" name="Cost / Reached" stroke="#f87171" strokeWidth={1.8} dot={{ r: 2.5, fill: "#f87171" }} />
             <Line yAxisId="right" type="monotone" dataKey="costPerTargeted" name="Cost / Targeted" stroke="#94a3b8" strokeWidth={1.5} strokeDasharray="4 2" dot={{ r: 2, fill: "#94a3b8" }} />
-          </ComposedChart>
-        </ResponsiveContainer>
-      </div>
-    </div>
-  );
-}
-
-// ── Crisis Funding Gap Chart ───────────────────────────────────────────────────
-function CrisisFundingGapChart({ crisis }: { crisis: CrisisData }) {
-  const chartData = useMemo(() => {
-    return crisis.countries
-      .filter(c => c.overallFunding && c.overallFunding.totalRequirements > 0)
-      .map(c => ({
-        name: c.countryName.length > 12 ? c.countryName.slice(0, 12) + "…" : c.countryName,
-        percentFunded: Math.round(c.overallFunding!.percentFunded),
-        severity: c.severityIndex,
-        requirements: Math.round((c.overallFunding?.totalRequirements ?? 0) / 1_000_000),
-      }))
-      .sort((a, b) => b.severity - a.severity)
-      .slice(0, 8);
-  }, [crisis]);
-
-  if (chartData.length === 0) return null;
-
-  return (
-    <div className="space-y-2">
-      <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-        Funding % vs Severity
-      </p>
-      <div className="h-56 w-full">
-        <ResponsiveContainer width="100%" height="100%">
-          <ComposedChart
-            data={chartData}
-            margin={{ top: 12, right: 46, bottom: 72, left: 12 }}
-          >
-            <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
-            <XAxis
-              dataKey="name"
-              tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-              angle={-42}
-              textAnchor="end"
-              interval={0}
-              tickLine={false}
-              axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
-            />
-            <YAxis
-              yAxisId="left"
-              tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-              tickFormatter={(v: number) => `${v}%`}
-              tickLine={false}
-              axisLine={false}
-              width={40}
-              domain={[0, 100]}
-            />
-            <YAxis
-              yAxisId="right"
-              orientation="right"
-              tick={{ fontSize: 9, fill: "rgba(248,113,113,0.6)", fontFamily: "monospace" }}
-              tickLine={false}
-              axisLine={false}
-              width={40}
-              domain={[0, 5]}
-              label={{ value: "Severity", angle: 90, position: "insideRight", offset: -20, style: { fontSize: 8, fill: "rgba(248,113,113,0.5)", fontFamily: "monospace" } }}
-            />
-            <Tooltip
-              contentStyle={chartTooltipStyle}
-              labelStyle={chartLabelStyle}
-              formatter={(value: number | string | undefined, name: string | undefined) => {
-                if (value === undefined || name === undefined) return ["", name || ""];
-                if (name === "percentFunded") return [`${value}%`, "% Funded"];
-                if (name === "severity" && typeof value === "number") return [value.toFixed(1), "Severity"];
-                if (name === "requirements") return [`$${value}M`, "Requirements"];
-                return [value, name];
-              }}
-            />
-            <Legend
-              wrapperStyle={{ fontSize: 9, fontFamily: "monospace", color: "rgba(0,200,255,0.5)", paddingTop: 4 }}
-              iconSize={8}
-            />
-            <Bar yAxisId="left" dataKey="percentFunded" name="% Funded" fill="#12626e" radius={[3, 3, 0, 0]} opacity={0.85} />
-            <Line yAxisId="right" type="monotone" dataKey="severity" name="Severity" stroke="#f87171" strokeWidth={2} dot={{ r: 3, fill: "#f87171" }} />
           </ComposedChart>
         </ResponsiveContainer>
       </div>
@@ -717,9 +868,6 @@ function CrisisDetailView({ crisis, onBack }: { crisis: CrisisData; onBack: () =
 
           <Separator className="opacity-20" />
           <CrisisReachChart crisis={crisis} />
-
-          <Separator className="opacity-20" />
-          <CrisisFundingGapChart crisis={crisis} />
 
           <Separator className="opacity-20" />
           <div className="space-y-2">
@@ -811,20 +959,6 @@ function CategoryDetailView({
     };
   }, [crises]);
 
-  // Chart: funding % per crisis in this category
-  const crisisChartData = useMemo(() => {
-    return crises
-      .map((crisis) => {
-        const req  = crisis.countries.reduce((s, c) => s + (c.overallFunding?.totalRequirements ?? 0), 0);
-        const fund = crisis.countries.reduce((s, c) => s + (c.overallFunding?.totalFunding ?? 0), 0);
-        const pct  = req > 0 ? Math.min((fund / req) * 100, 100) : 0;
-        const name = crisis.crisisName.length > 16 ? crisis.crisisName.slice(0, 16) + "…" : crisis.crisisName;
-        const maxSev = Math.max(...crisis.countries.map((c) => c.severityIndex));
-        return { name, pct: Math.round(pct), req: Math.round(req / 1_000_000), fund: Math.round(fund / 1_000_000), severity: maxSev };
-      })
-      .sort((a, b) => a.pct - b.pct);
-  }, [crises]);
-
   return (
     <div className="flex flex-col h-full min-h-0">
       {/* Back nav */}
@@ -891,86 +1025,6 @@ function CategoryDetailView({
               <Progress value={Math.min(stats.pct, 100)} className="h-1.5" />
             </div>
           </div>
-
-          {/* Funding % per crisis chart */}
-          {crisisChartData.length > 1 && (
-            <>
-              <Separator className="opacity-20" />
-              <div className="space-y-2">
-                <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-                  % Funded vs Max Severity
-                </p>
-                <div className="h-52 w-full">
-                  <ResponsiveContainer width="100%" height="100%">
-                    <ComposedChart
-                      data={crisisChartData}
-                      layout="vertical"
-                      margin={{ top: 4, right: 48, bottom: 4, left: 10 }}
-                    >
-                      <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.06)" horizontal={false} />
-                      <XAxis
-                        type="number"
-                        xAxisId="bottom"
-                        domain={[0, 100]}
-                        tick={{ fontSize: 9, fill: "rgba(0,200,255,0.5)", fontFamily: "monospace" }}
-                        tickFormatter={(v) => `${v}%`}
-                        tickLine={false}
-                        axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
-                      />
-                      <XAxis
-                        type="number"
-                        xAxisId="top"
-                        orientation="top"
-                        domain={[0, 5]}
-                        tick={{ fontSize: 9, fill: "rgba(248,113,113,0.6)", fontFamily: "monospace" }}
-                        tickLine={false}
-                        axisLine={false}
-                      />
-                      <YAxis
-                        type="category"
-                        dataKey="name"
-                        tick={{ fontSize: 8, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
-                        tickLine={false}
-                        axisLine={false}
-                        width={70}
-                      />
-                      <Tooltip
-                        contentStyle={chartTooltipStyle}
-                        labelStyle={chartLabelStyle}
-                        formatter={(value: number | string | undefined, name: string | undefined) => {
-                          if (value === undefined || name === undefined) return ["", name || ""];
-                          if (name === "pct") return [`${value}%`, "% Funded"];
-                          if (name === "severity" && typeof value === "number") return [value.toFixed(1), "Max Severity"];
-                          return [value, name];
-                        }}
-                      />
-                      <Legend
-                        wrapperStyle={{ fontSize: 9, fontFamily: "monospace", color: "rgba(0,200,255,0.5)", paddingTop: 4 }}
-                        iconSize={8}
-                      />
-                      <Bar
-                        xAxisId="bottom"
-                        dataKey="pct"
-                        name="% Funded"
-                        radius={[0, 3, 3, 0]}
-                        fill="#22d3ee"
-                        opacity={0.82}
-                      />
-                      <Line
-                        xAxisId="top"
-                        dataKey="severity"
-                        name="Severity"
-                        type="monotone"
-                        stroke="#f87171"
-                        strokeWidth={2}
-                        dot={{ r: 3, fill: "#f87171" }}
-                      />
-                    </ComposedChart>
-                  </ResponsiveContainer>
-                </div>
-              </div>
-            </>
-          )}
 
           {/* Crisis list */}
           <Separator className="opacity-20" />
@@ -1087,15 +1141,120 @@ function CrisesTab() {
 function CountriesTab() {
   const { data, setSelectedCountryIso3, selectedCountryIso3, getCountry, setGlobeFocusIso3 } = useAppContext();
   const [search, setSearch] = useState("");
+  const [showSortFilter, setShowSortFilter] = useState(false);
+  const [sortBy, setSortBy] = useState<
+    "name-asc"
+    | "severity-asc"
+    | "severity-desc"
+    | "gap-asc"
+    | "gap-desc"
+    | "neglect-asc"
+    | "neglect-desc"
+    | "on-appeal-asc"
+    | "on-appeal-desc"
+  >("name-asc");
+  const [severityMin, setSeverityMin] = useState("");
+  const [severityMax, setSeverityMax] = useState("");
+  const [gapMin, setGapMin] = useState("");
+  const [gapMax, setGapMax] = useState("");
+  const [neglectMin, setNeglectMin] = useState("");
+  const [neglectMax, setNeglectMax] = useState("");
+  const [onAppealMin, setOnAppealMin] = useState("");
+  const [onAppealMax, setOnAppealMax] = useState("");
+
+  const parseBound = (value: string): number | null => {
+    const parsed = Number.parseFloat(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+
+  const inRange = (value: number | null, min: number | null, max: number | null) => {
+    if (value === null) return min === null && max === null;
+    if (min !== null && value < min) return false;
+    if (max !== null && value > max) return false;
+    return true;
+  };
 
   const countryList = useMemo(() => {
     const entries = Object.values(data.countries)
       .filter((c) => c.name && c.iso3 && (c.severity || c.overallFunding || c.crisisAllocations))
-      .sort((a, b) => a.name.localeCompare(b.name));
-    if (!search) return entries;
+      .map((country) => {
+        const severity = country.severity?.severityIndex ?? null;
+        const onAppealFunding = country.overallFunding?.totalFunding ?? null;
+        const fundingGap = country.overallFunding
+          ? Math.max(0, country.overallFunding.totalRequirements - country.overallFunding.totalFundingAll)
+          : null;
+        const neglectIndex = country.severity && country.overallFunding
+          ? (country.severity.severityIndex / 5) *
+            (1 - country.overallFunding.percentFunded / 100) *
+            Math.log10(1 + country.overallFunding.totalRequirements / 1_000_000)
+          : null;
+
+        return {
+          country,
+          severity,
+          fundingGap,
+          neglectIndex,
+          onAppealFunding,
+        };
+      });
+
     const q = search.toLowerCase();
-    return entries.filter((c) => c.name.toLowerCase().includes(q) || c.iso3.toLowerCase().includes(q));
-  }, [data.countries, search]);
+    const searched = q
+      ? entries.filter(({ country }) =>
+          country.name.toLowerCase().includes(q) || country.iso3.toLowerCase().includes(q)
+        )
+      : entries;
+
+    const filtered = searched.filter((row) =>
+      inRange(row.severity, parseBound(severityMin), parseBound(severityMax)) &&
+      inRange(row.fundingGap, parseBound(gapMin), parseBound(gapMax)) &&
+      inRange(row.neglectIndex, parseBound(neglectMin), parseBound(neglectMax)) &&
+      inRange(row.onAppealFunding, parseBound(onAppealMin), parseBound(onAppealMax))
+    );
+
+    const sortable = [...filtered];
+    const nullLast = (value: number | null, asc: boolean) => {
+      if (value === null) return asc ? Number.POSITIVE_INFINITY : Number.NEGATIVE_INFINITY;
+      return value;
+    };
+
+    sortable.sort((a, b) => {
+      switch (sortBy) {
+        case "severity-asc":
+          return nullLast(a.severity, true) - nullLast(b.severity, true);
+        case "severity-desc":
+          return nullLast(b.severity, false) - nullLast(a.severity, false);
+        case "gap-asc":
+          return nullLast(a.fundingGap, true) - nullLast(b.fundingGap, true);
+        case "gap-desc":
+          return nullLast(b.fundingGap, false) - nullLast(a.fundingGap, false);
+        case "neglect-asc":
+          return nullLast(a.neglectIndex, true) - nullLast(b.neglectIndex, true);
+        case "neglect-desc":
+          return nullLast(b.neglectIndex, false) - nullLast(a.neglectIndex, false);
+        case "on-appeal-asc":
+          return nullLast(a.onAppealFunding, true) - nullLast(b.onAppealFunding, true);
+        case "on-appeal-desc":
+          return nullLast(b.onAppealFunding, false) - nullLast(a.onAppealFunding, false);
+        default:
+          return a.country.name.localeCompare(b.country.name);
+      }
+    });
+
+    return sortable.map((row) => row.country);
+  }, [
+    data.countries,
+    search,
+    sortBy,
+    severityMin,
+    severityMax,
+    gapMin,
+    gapMax,
+    neglectMin,
+    neglectMax,
+    onAppealMin,
+    onAppealMax,
+  ]);
 
   if (selectedCountryIso3) {
     const country = getCountry(selectedCountryIso3);
@@ -1112,13 +1271,69 @@ function CountriesTab() {
   return (
     <div className="flex flex-col h-full min-h-0">
       <div className="relative px-2 shrink-0">
-        <Search className="absolute left-4 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-cyan-400/40" />
-        <Input
-          placeholder="Search countries..."
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          className="pl-8 bg-black/40 border-cyan-500/20 text-sm h-9 font-mono placeholder:text-cyan-400/30 focus:border-cyan-500/50"
-        />
+        <div className="flex items-center gap-2">
+          <div className="relative flex-1">
+            <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-cyan-400/40" />
+            <Input
+              placeholder="Search countries..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="pl-8 bg-black/40 border-cyan-500/20 text-sm h-9 font-mono placeholder:text-cyan-400/30 focus:border-cyan-500/50"
+            />
+          </div>
+          <button
+            onClick={() => setShowSortFilter((prev) => !prev)}
+            className={`h-9 w-9 shrink-0 rounded-md border transition-colors flex items-center justify-center ${
+              showSortFilter
+                ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-300"
+                : "border-cyan-500/20 bg-black/40 text-cyan-400/60 hover:border-cyan-500/40 hover:text-cyan-300"
+            }`}
+            aria-label="Open sort and filter"
+          >
+            <SlidersHorizontal className="h-4 w-4" />
+          </button>
+        </div>
+
+        {showSortFilter && (
+          <div className="absolute right-2 top-11 z-50 w-[320px] rounded-md border border-cyan-500/25 bg-black/95 p-3 shadow-[0_0_16px_rgba(0,200,255,0.15)] space-y-3">
+            <div className="space-y-1">
+              <label className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">Sort by</label>
+              <select
+                value={sortBy}
+                onChange={(e) => setSortBy(e.target.value as typeof sortBy)}
+                className="w-full h-8 rounded border border-cyan-500/20 bg-black/50 text-[11px] font-mono text-cyan-100 px-2"
+              >
+                <option value="name-asc">Name (A → Z)</option>
+                <option value="severity-asc">Severity (low → high)</option>
+                <option value="severity-desc">Severity (high → low)</option>
+                <option value="gap-asc">Funding gap (low → high)</option>
+                <option value="gap-desc">Funding gap (high → low)</option>
+                <option value="neglect-asc">Neglect index (low → high)</option>
+                <option value="neglect-desc">Neglect index (high → low)</option>
+                <option value="on-appeal-asc">On-appeal funding (low → high)</option>
+                <option value="on-appeal-desc">On-appeal funding (high → low)</option>
+              </select>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              <div className="col-span-2 text-[10px] font-mono uppercase tracking-widest text-cyan-400/60">Severity (0-5)</div>
+              <Input placeholder="Min" value={severityMin} onChange={(e) => setSeverityMin(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+              <Input placeholder="Max" value={severityMax} onChange={(e) => setSeverityMax(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+
+              <div className="col-span-2 text-[10px] font-mono uppercase tracking-widest text-cyan-400/60">Funding Gap (USD)</div>
+              <Input placeholder="Min" value={gapMin} onChange={(e) => setGapMin(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+              <Input placeholder="Max" value={gapMax} onChange={(e) => setGapMax(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+
+              <div className="col-span-2 text-[10px] font-mono uppercase tracking-widest text-cyan-400/60">Neglect Index</div>
+              <Input placeholder="Min" value={neglectMin} onChange={(e) => setNeglectMin(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+              <Input placeholder="Max" value={neglectMax} onChange={(e) => setNeglectMax(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+
+              <div className="col-span-2 text-[10px] font-mono uppercase tracking-widest text-cyan-400/60">On-Appeal Funding (USD)</div>
+              <Input placeholder="Min" value={onAppealMin} onChange={(e) => setOnAppealMin(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+              <Input placeholder="Max" value={onAppealMax} onChange={(e) => setOnAppealMax(e.target.value)} className="h-8 bg-black/40 border-cyan-500/20 text-[11px] font-mono" />
+            </div>
+          </div>
+        )}
       </div>
 
       <ScrollArea className="flex-1 min-h-0">
@@ -1215,21 +1430,23 @@ function ScatterTooltip({ active, payload }: {
 }
 
 // ── Global Tab ─────────────────────────────────────────────────────────────────
-function StatCard({ label, value, className }: { label: string; value: string; className?: string }) {
+function StatCard({ label, value, className, tip }: { label: string; value: string; className?: string; tip?: string }) {
   return (
     <div className="rounded border border-cyan-500/15 bg-black/40 p-3">
-      <p className="text-[9px] font-mono uppercase tracking-widest text-cyan-400/60 mb-1.5">{label}</p>
+      <p className="text-[9px] font-mono uppercase tracking-widest text-cyan-400/60 mb-1.5">
+        {tip ? <HoverTip tip={tip}>{label}</HoverTip> : label}
+      </p>
       <p className={`text-sm font-bold font-mono ${className}`}>{value}</p>
     </div>
   );
 }
 
 function GlobalTab() {
-  const { data, setSelectedCountryIso3, setSidebarTab, setGlobeFocusIso3 } = useAppContext();
+  const { data, setSelectedCountryIso3, setSidebarTab, setGlobeFocusIso3, setActiveCrisis } = useAppContext();
   const stats = data.globalStats;
+  const [globalView, setGlobalView] = useState<"main" | "funding-gap-all" | "underlooked-crises-all">("main");
 
-  // Top 10 funding gaps stacked bar data
-  const fundingGapData = useMemo(() => {
+  const fundingGapAllData = useMemo(() => {
     return Object.values(data.countries)
       .filter(c => c.overallFunding && c.overallFunding.totalRequirements > 0)
       .map(c => {
@@ -1242,12 +1459,13 @@ function GlobalTab() {
           onAppeal: Math.round(of_.totalFunding / 1_000_000),
           offAppeal: Math.round(of_.offAppealFunding / 1_000_000),
           gap: Math.round(gap / 1_000_000),
-          totalGap: Math.round((of_.totalRequirements - of_.totalFunding) / 1_000_000),
+          totalGap: Math.round((of_.totalRequirements - of_.totalFundingAll) / 1_000_000),
         };
       })
-      .sort((a, b) => b.totalGap - a.totalGap)
-      .slice(0, 10);
+        .sort((a, b) => b.totalGap - a.totalGap);
   }, [data.countries]);
+
+      const fundingGapData = fundingGapAllData.slice(0, 10);
 
   const scatterData = useMemo(() => {
     return Object.values(data.countries)
@@ -1269,8 +1487,8 @@ function GlobalTab() {
       });
   }, [data.countries]);
 
-  // Underlooked crises table: Neglect Index v2 ranking
-  const neglectRanking = useMemo(() => {
+  // Underlooked countries table: Neglect Index v2 ranking
+  const neglectCountryRanking = useMemo(() => {
     return Object.values(data.countries)
       .filter(c => c.severity && c.overallFunding && c.overallFunding.totalRequirements > 0)
       .map(c => {
@@ -1297,51 +1515,242 @@ function GlobalTab() {
       .slice(0, 15);
   }, [data.countries]);
 
+  // Underlooked crises (crisis-level aggregation): compute Neglect Index across countries
+  // Neglect Index = (MaxSeverity/5) * (1 - %Funded) * log10(1 + TotalRequirements/$1M)
+  const neglectCrisisAllRanking = useMemo(() => {
+    return data.crises
+      .map((crisis) => {
+        const totalRequirements = crisis.countries.reduce((s, c) => {
+          const r = c.overallFunding?.totalRequirements ?? 0;
+          return s + (Number.isFinite(r) ? r : 0);
+        }, 0);
+        const totalFunding = crisis.countries.reduce((s, c) => {
+          const f = c.overallFunding?.totalFunding ?? 0;
+          return s + (Number.isFinite(f) ? f : 0);
+        }, 0);
+        const maxSeverity = crisis.countries.reduce((m, c) => Math.max(m, c.severityIndex || 0), 0);
+        const avgSeverity = crisis.countries.length > 0
+          ? crisis.countries.reduce((s, c) => s + (c.severityIndex || 0), 0) / crisis.countries.length
+          : 0;
+        const percentFunded = totalRequirements > 0 ? (totalFunding / totalRequirements) * 100 : 0;
+        const requirementsM = totalRequirements / 1_000_000;
+        const neglectIndex = (maxSeverity / 5) * (1 - percentFunded / 100) * Math.log10(1 + requirementsM);
+        const gap = Math.max(0, totalRequirements - totalFunding);
+
+        return {
+          crisisId: crisis.crisisId,
+          crisisName: crisis.crisisName,
+          categories: crisis.categories,
+          countriesCount: crisis.countries.length,
+          maxSeverity,
+          avgSeverity,
+          percentFunded,
+          totalRequirements,
+          gap,
+          neglectIndex,
+        };
+      })
+      .filter((row) => row.totalRequirements > 0 && row.maxSeverity > 0 && Number.isFinite(row.neglectIndex))
+      .sort((a, b) => b.neglectIndex - a.neglectIndex);
+  }, [data.crises]);
+
+  const neglectCrisisRanking = neglectCrisisAllRanking.slice(0, 10);
+
+  if (globalView === "funding-gap-all") {
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-cyan-500/15 shrink-0">
+          <button
+            onClick={() => setGlobalView("main")}
+            className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Global
+          </button>
+          <span className="text-cyan-500/30 text-xs">/</span>
+          <span className="text-[11px] font-mono text-cyan-300/80 truncate">All Absolute Funding Gaps</span>
+        </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="p-3 space-y-2">
+            {fundingGapAllData.map((row, idx) => {
+              const total = row.onAppeal + row.offAppeal + row.gap;
+              const onPct = total > 0 ? (row.onAppeal / total) * 100 : 0;
+              const offPct = total > 0 ? (row.offAppeal / total) * 100 : 0;
+              return (
+                <button
+                  key={row.iso3}
+                  onClick={() => {
+                    setSelectedCountryIso3(row.iso3);
+                    setGlobeFocusIso3(row.iso3);
+                    setSidebarTab("countries");
+                  }}
+                  className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
+                >
+                  <div className="flex items-center gap-2 mb-1">
+                    <span className="text-[9px] font-mono text-cyan-400/40 w-5 shrink-0">{idx + 1}.</span>
+                    <span className="text-[11px] font-medium flex-1 truncate">{row.fullName}</span>
+                    <span className="text-[9px] font-mono text-red-400 font-bold shrink-0">
+                      Gap: {row.gap >= 1000 ? `$${(row.gap / 1000).toFixed(2)}B` : `$${row.gap}M`}
+                    </span>
+                  </div>
+                  <div className="h-2 rounded-full bg-muted/20 overflow-hidden flex">
+                    {onPct > 0 && <div className="h-full bg-cyan-500" style={{ width: `${onPct}%` }} />}
+                    {offPct > 0 && <div className="h-full bg-cyan-800" style={{ width: `${offPct}%` }} />}
+                    <div className="h-full bg-red-500" style={{ width: `${Math.max(0, 100 - onPct - offPct)}%` }} />
+                  </div>
+                </button>
+              );
+            })}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
+
+  if (globalView === "underlooked-crises-all") {
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-cyan-500/15 shrink-0">
+          <button
+            onClick={() => setGlobalView("main")}
+            className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Global
+          </button>
+          <span className="text-cyan-500/30 text-xs">/</span>
+          <span className="text-[11px] font-mono text-red-300/80 truncate">All Underlooked Crises</span>
+        </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="p-3 space-y-1">
+            {neglectCrisisAllRanking.map((row, idx) => (
+              <button
+                key={row.crisisId}
+                onClick={() => {
+                  const crisis = data.crises.find((c) => c.crisisId === row.crisisId) || null;
+                  setActiveCrisis(crisis);
+                  setSidebarTab("crises");
+                }}
+                className="w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[9px] font-mono text-cyan-400/40 w-5 shrink-0">{idx + 1}.</span>
+                  <span className="text-[11px] font-medium flex-1 truncate">{row.crisisName}</span>
+                  <span className="text-[9px] font-mono text-red-400 font-bold shrink-0">{row.neglectIndex.toFixed(2)}</span>
+                </div>
+                <div className="h-1 rounded-full bg-muted/20 overflow-hidden mb-1">
+                  <div
+                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-red-500"
+                    style={{ width: `${neglectCrisisAllRanking[0]?.neglectIndex ? (row.neglectIndex / neglectCrisisAllRanking[0].neglectIndex) * 100 : 0}%` }}
+                  />
+                </div>
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
+
   return (
     <ScrollArea className="flex-1 min-h-0">
       <div className="p-3 space-y-3">
-        <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
-          Global Humanitarian Overview
-        </p>
-
-        <div className="grid grid-cols-2 gap-2">
-          <StatCard label="Total Requirements" value={formatDollars(stats.totalRequirements)} className="text-foreground" />
-          <StatCard label="Funded (On-appeal)" value={formatDollars(stats.totalFunding)} className="text-cyan-400" />
-          <StatCard label="Funded (Off-appeal)" value={formatDollars(stats.totalOffAppealFunding)} className="text-cyan-400" />
-          <StatCard label="CBPF Allocations" value={formatDollars(stats.totalCBPFAllocations)} className="text-cyan-400" />
-          <StatCard label="% Funded (On-appeal)" value={`${stats.percentFunded}%`} className={stats.percentFunded < 50 ? "text-red-400" : "text-cyan-400"} />
-          <StatCard label="% Funded (All rows)" value={`${stats.percentFundedAll}%`} className={stats.percentFundedAll < 50 ? "text-red-400" : "text-cyan-400"} />
-          <StatCard label="Countries in Crisis" value={stats.countriesInCrisis.toString()} className="text-amber-400" />
-          <StatCard label="Active Crises" value={stats.activeCrisisCount.toString()} className="text-red-400" />
-        </div>
-
-        <div className="rounded border border-red-500/20 bg-red-500/5 p-3 space-y-2">
-          <div className="flex items-center gap-2">
-            <TrendingDown className="h-3.5 w-3.5 text-red-400" />
-            <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">Global Funding Gap</p>
-          </div>
-          <p className="text-xl font-bold font-mono text-red-400">{formatDollars(stats.totalRequirements - stats.totalFunding)}</p>
-          <Progress value={Math.min(stats.percentFunded, 100)} className="h-1.5" />
-          <p className="text-[10px] font-mono text-muted-foreground">
-            {stats.percentFunded}% of total requirements funded (on-appeal)
-          </p>
-          {stats.totalOffAppealFunding > 0 && (
-            <p className="text-[10px] font-mono text-muted-foreground">
-              + {formatDollars(stats.totalOffAppealFunding)} off-appeal (all-rows: {stats.percentFundedAll}%)
-            </p>
-          )}
-        </div>
+        {/* ── Underlooked Crises (Crisis-Level) ───────────────────────────── */}
+        {neglectCrisisRanking.length > 0 && (
+          <>
+            <div className="space-y-2">
+              <div className="flex items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                  <HoverTip tip="Most overlooked crises right now, combining severity, unmet funding, and crisis scale. Higher score means less attention relative to need.">
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
+                      Underlooked Crises (Top 10)
+                    </p>
+                  </HoverTip>
+                </div>
+                <button
+                  onClick={() => setGlobalView("underlooked-crises-all")}
+                  className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300"
+                >
+                  Show all
+                </button>
+              </div>
+              <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
+                Aggregated by crisis across affected countries. Click a row to open the crisis detail view.
+              </p>
+              <div className="space-y-1">
+                {neglectCrisisRanking.map((row, idx) => {
+                  const barWidth = neglectCrisisRanking[0].neglectIndex > 0
+                    ? (row.neglectIndex / neglectCrisisRanking[0].neglectIndex) * 100
+                    : 0;
+                  const cats = (row.categories || []).slice(0, 2);
+                  return (
+                    <button
+                      key={row.crisisId}
+                      onClick={() => {
+                        const crisis = data.crises.find((c) => c.crisisId === row.crisisId) || null;
+                        setActiveCrisis(crisis);
+                        setSidebarTab("crises");
+                      }}
+                      className="w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
+                    >
+                      <div className="flex items-start gap-2 mb-1">
+                        <span className="text-[9px] font-mono text-cyan-400/40 w-4 shrink-0">{idx + 1}.</span>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center justify-between gap-2">
+                            <span className="text-[11px] font-medium leading-tight truncate">{row.crisisName}</span>
+                            <span className="text-[9px] font-mono text-red-400 font-bold shrink-0">{row.neglectIndex.toFixed(2)}</span>
+                          </div>
+                          {cats.length > 0 && (
+                            <div className="flex items-center gap-1 mt-1">
+                              {cats.map((c) => (
+                                <Badge
+                                  key={c}
+                                  variant="outline"
+                                  className="text-[9px] px-1.5 py-0 font-mono border-red-500/20 text-red-300/70"
+                                >
+                                  {c}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                      <div className="h-1 rounded-full bg-muted/20 overflow-hidden mb-1">
+                        <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-red-500" style={{ width: `${barWidth}%` }} />
+                      </div>
+                      <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground flex-wrap">
+                        <span>Countries: <strong className="text-cyan-400/70">{row.countriesCount}</strong></span>
+                        <span>Max Sev: <strong className="text-amber-400">{row.maxSeverity.toFixed(1)}</strong></span>
+                        <span>Funded: <strong className={row.percentFunded < 50 ? "text-red-400" : "text-cyan-400"}>{row.percentFunded.toFixed(0)}%</strong></span>
+                        <span>Gap: <strong className="text-red-400">{formatDollars(row.gap)}</strong></span>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
 
         {/* ── Top 10 Absolute Funding Gaps ─────────────────────────────────── */}
         {fundingGapData.length > 0 && (
           <>
             <Separator className="opacity-20 my-2" />
             <div className="space-y-2">
-              <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
-                Top 10 Absolute Funding Gaps
-              </p>
+              <div className="flex items-center justify-between gap-2 px-1">
+                <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+                  Top 10 Absolute Funding Gaps
+                </p>
+                <button
+                  onClick={() => setGlobalView("funding-gap-all")}
+                  className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300"
+                >
+                  Show all
+                </button>
+              </div>
               <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
-                Where the most money is missing. Each bar shows funded (on-appeal), funded (off-appeal), and the remaining gap.
+                Countries with the largest unmet need after all funding (on-appeal + off-appeal). Each bar shows funded on-appeal, off-appeal, and remaining gap.
               </p>
               <div className="h-72 w-full">
                 <ResponsiveContainer width="100%" height="100%">
@@ -1463,24 +1872,26 @@ function GlobalTab() {
           </>
         )}
 
-        {/* ── Underlooked Crises Table ─────────────────────────────────────── */}
-        {neglectRanking.length > 0 && (
+        {/* ── Underlooked Countries Table ──────────────────────────────────── */}
+        {neglectCountryRanking.length > 0 && (
           <>
             <Separator className="opacity-20 my-2" />
             <div className="space-y-2">
               <div className="flex items-center gap-2 px-1">
                 <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
-                  Underlooked Crises (Severity-Adjusted)
-                </p>
+                <HoverTip tip="Ranks how overlooked each country's crisis is. Accounts for severity, funding shortfall, and the scale of humanitarian need. Higher = more underserved.">
+                  <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
+                    Underlooked Countries (Severity-Adjusted)
+                  </p>
+                </HoverTip>
               </div>
               <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
-                Ranked by Neglect Index: combines severity, funding gap, and crisis scale. Higher = more underlooked.
+                Ranked by Neglect Index: combines severity, underfunding, and scale. Higher = more underlooked.
               </p>
               <div className="space-y-1">
-                {neglectRanking.map((row, idx) => {
-                  const barWidth = neglectRanking[0].neglectIndex > 0
-                    ? (row.neglectIndex / neglectRanking[0].neglectIndex) * 100
+                {neglectCountryRanking.map((row, idx) => {
+                  const barWidth = neglectCountryRanking[0].neglectIndex > 0
+                    ? (row.neglectIndex / neglectCountryRanking[0].neglectIndex) * 100
                     : 0;
                   return (
                     <button
@@ -1520,6 +1931,41 @@ function GlobalTab() {
             </div>
           </>
         )}
+
+        <Separator className="opacity-20 my-2" />
+        <div className="space-y-2">
+          <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
+            Global Humanitarian Overview
+          </p>
+
+          <div className="grid grid-cols-2 gap-2">
+            <StatCard label="Total Requirements" value={formatDollars(stats.totalRequirements)} className="text-foreground" />
+            <StatCard label="Funded (On-appeal)" value={formatDollars(stats.totalFunding)} className="text-cyan-400" />
+            <StatCard label="Funded (Off-appeal)" value={formatDollars(stats.totalOffAppealFunding)} className="text-cyan-400" />
+            <StatCard label="CBPF Allocations" value={formatDollars(stats.totalCBPFAllocations)} className="text-cyan-400" />
+            <StatCard label="% Funded (On-appeal)" value={`${stats.percentFunded}%`} className={stats.percentFunded < 50 ? "text-red-400" : "text-cyan-400"} />
+            <StatCard label="% Funded (All)" value={`${stats.percentFundedAll}%`} className={stats.percentFundedAll < 50 ? "text-red-400" : "text-cyan-400"} />
+            <StatCard label="Countries in Crisis" value={stats.countriesInCrisis.toString()} className="text-amber-400" />
+            <StatCard label="Active Crises" value={stats.activeCrisisCount.toString()} className="text-red-400" />
+          </div>
+
+          <div className="rounded border border-red-500/20 bg-red-500/5 p-3 space-y-2">
+            <div className="flex items-center gap-2">
+              <TrendingDown className="h-3.5 w-3.5 text-red-400" />
+              <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">Global Funding Gap</p>
+            </div>
+            <p className="text-xl font-bold font-mono text-red-400">{formatDollars(stats.totalRequirements - stats.totalFunding)}</p>
+            <Progress value={Math.min(stats.percentFunded, 100)} className="h-1.5" />
+            <p className="text-[10px] font-mono text-muted-foreground">
+              {stats.percentFunded}% of total requirements funded (on-appeal)
+            </p>
+            {stats.totalOffAppealFunding > 0 && (
+              <p className="text-[10px] font-mono text-muted-foreground">
+                + {formatDollars(stats.totalOffAppealFunding)} off-appeal (all: {stats.percentFundedAll}%)
+              </p>
+            )}
+          </div>
+        </div>
       </div>
     </ScrollArea>
   );
@@ -1571,6 +2017,13 @@ export default function AppSidebar() {
           >
             <TabsList className="w-full grid grid-cols-3 h-9 mt-2 bg-black/60 border border-cyan-500/15 shrink-0">
               <TabsTrigger
+                value="global"
+                className="text-xs font-mono data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-300 data-[state=active]:shadow-[0_0_8px_rgba(0,200,255,0.2)] text-cyan-400/50"
+              >
+                <Globe2 className="h-3.5 w-3.5 mr-1.5" />
+                Global
+              </TabsTrigger>
+              <TabsTrigger
                 value="crises"
                 className="text-xs font-mono data-[state=active]:bg-red-500/15 data-[state=active]:text-red-300 data-[state=active]:shadow-[0_0_8px_rgba(255,60,60,0.2)] text-cyan-400/50"
               >
@@ -1584,23 +2037,16 @@ export default function AppSidebar() {
                 <MapPin className="h-3.5 w-3.5 mr-1.5" />
                 Countries
               </TabsTrigger>
-              <TabsTrigger
-                value="global"
-                className="text-xs font-mono data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-300 data-[state=active]:shadow-[0_0_8px_rgba(0,200,255,0.2)] text-cyan-400/50"
-              >
-                <Globe2 className="h-3.5 w-3.5 mr-1.5" />
-                Global
-              </TabsTrigger>
             </TabsList>
 
+            <TabsContent value="global" className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden flex flex-col">
+              <GlobalTab />
+            </TabsContent>
             <TabsContent value="crises" className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden flex flex-col">
               <CrisesTab />
             </TabsContent>
             <TabsContent value="countries" className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden">
               <CountriesTab />
-            </TabsContent>
-            <TabsContent value="global" className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden flex flex-col">
-              <GlobalTab />
             </TabsContent>
           </Tabs>
         </div>

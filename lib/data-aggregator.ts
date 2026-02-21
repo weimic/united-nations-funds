@@ -132,8 +132,9 @@ function parseInformSeverity(): InformSeverity[] {
   const buf = fs.readFileSync(path.join(filePath, xlsxFile));
   const wb = XLSX.read(buf);
 
-  // Use "INFORM Severity - country" sheet for country-level data
-  const sheetName = "INFORM Severity - country";
+  // Use "INFORM Severity - all crises" sheet for individual crisis-level data
+  // (The "country" sheet aggregates multiple crises into one row, losing detail)
+  const sheetName = "INFORM Severity - all crises";
   const ws = wb.Sheets[sheetName];
   if (!ws) {
     console.warn(`Sheet "${sheetName}" not found`);
@@ -162,17 +163,27 @@ function parseInformSeverity(): InformSeverity[] {
     const severityIndex = typeof row[5] === "number" ? row[5] : parseFloat(String(row[5]));
     if (isNaN(severityIndex)) continue;
 
-    results.push({
-      crisisName: String(row[0]),
-      crisisId: String(row[1]),
-      country: String(row[2]),
-      iso3: String(row[3]),
-      drivers: String(row[4] || ""),
-      severityIndex,
-      severityCategory: String(row[7] || row[6] || ""),
-      trend: String(row[8] || "Stable"),
-      region: String(row[19] || ""),
-    });
+    const iso3Raw = String(row[3] || "").trim().toUpperCase();
+    if (!iso3Raw || iso3Raw.length < 2) continue;
+
+    // Some INFORM rows contain multi-country ISO fields (e.g. "ECU, PER").
+    // Expand to one entry per ISO3 so country-level crisis lists are complete.
+    const iso3Codes = (iso3Raw.match(/[A-Z]{3}/g) || []).filter(Boolean);
+    if (iso3Codes.length === 0) continue;
+
+    for (const iso3 of iso3Codes) {
+      results.push({
+        crisisName: String(row[0]),
+        crisisId: String(row[1]),
+        country: String(row[2]),
+        iso3,
+        drivers: String(row[4] || ""),
+        severityIndex,
+        severityCategory: String(row[7] || row[6] || ""),
+        trend: String(row[8] || "Stable"),
+        region: String(row[19] || ""),
+      });
+    }
   }
 
   return results;

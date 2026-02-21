@@ -44,7 +44,7 @@ export function AppProvider({
 }) {
   const [activeCrisis, setActiveCrisis] = useState<CrisisData | null>(null);
   const [selectedCountryIso3, setSelectedCountryIso3] = useState<string | null>(null);
-  const [sidebarTab, setSidebarTab] = useState<"crises" | "countries" | "global">("crises");
+  const [sidebarTab, setSidebarTab] = useState<"crises" | "countries" | "global">("global");
   const [crisisModalOpen, setCrisisModalOpen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
   const [globeFocusIso3, setGlobeFocusIso3] = useState<string | null>(null);
