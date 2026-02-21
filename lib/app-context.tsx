@@ -14,8 +14,8 @@ interface AppContextType {
   setActiveCrisis: (crisis: CrisisData | null) => void;
   selectedCountryIso3: string | null;
   setSelectedCountryIso3: (iso3: string | null) => void;
-  sidebarTab: "crises" | "countries" | "global";
-  setSidebarTab: (tab: "crises" | "countries" | "global") => void;
+  sidebarTab: "crises" | "countries" | "overview";
+  setSidebarTab: (tab: "crises" | "countries" | "overview") => void;
   crisisModalOpen: boolean;
   setCrisisModalOpen: (open: boolean) => void;
   activeCategories: Set<string>;
@@ -29,6 +29,9 @@ interface AppContextType {
   /** Map visualization style: dot cloud or solid country fills */
   mapStyle: "dots" | "solid";
   setMapStyle: (style: "dots" | "solid") => void;
+  /** Spike color mode: default (orange) or spectrum (yellow-to-red by magnitude) */
+  spikeColorMode: "default" | "spectrum";
+  setSpikeColorMode: (mode: "default" | "spectrum") => void;
   /** Get the active crisis entry for a specific country */
   getCrisisEntry: (iso3: string) => CrisisCountryEntry | null;
   /** Get unified country data */
@@ -50,12 +53,13 @@ export function AppProvider({
 }) {
   const [activeCrisis, setActiveCrisis] = useState<CrisisData | null>(null);
   const [selectedCountryIso3, setSelectedCountryIso3] = useState<string | null>(null);
-  const [sidebarTab, setSidebarTab] = useState<"crises" | "countries" | "global">("global");
+  const [sidebarTab, setSidebarTab] = useState<"crises" | "countries" | "overview">("overview");
   const [crisisModalOpen, setCrisisModalOpen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
   const [globeFocusIso3, setGlobeFocusIso3] = useState<string | null>(null);
   const [spikeMode, setSpikeMode] = useState<"fundingGap" | "severity">("fundingGap");
   const [mapStyle, setMapStyle] = useState<"dots" | "solid">("dots");
+  const [spikeColorMode, setSpikeColorMode] = useState<"default" | "spectrum">("default");
 
   const activeCrisisCountryCodes = new Set(
     activeCrisis?.countries.map((c) => c.iso3) ?? []
@@ -108,6 +112,8 @@ export function AppProvider({
         setSpikeMode,
         mapStyle,
         setMapStyle,
+        spikeColorMode,
+        setSpikeColorMode,
         getCrisisEntry,
         getCountry,
         activeCrisisCountryCodes,

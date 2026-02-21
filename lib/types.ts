@@ -163,7 +163,7 @@ export interface GeoData {
 export interface AppState {
   activeCrisis: CrisisData | null;
   selectedCountry: string | null; // ISO3
-  sidebarTab: "crises" | "countries" | "global";
+  sidebarTab: "crises" | "countries" | "overview";
 }
 
 /** Serializable data for client components */

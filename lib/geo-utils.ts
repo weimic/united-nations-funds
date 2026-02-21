@@ -389,8 +389,8 @@ export function buildSolidCountryTexture(
   geoData: GeoData,
   countryColorMap: Record<string, string>,
   oceanColor: string = "#0a1628",
-  width = 4096,
-  height = 2048
+  width = 8192,
+  height = 4096
 ): THREE.CanvasTexture | null {
   if (typeof document === "undefined") return null;
 
@@ -405,6 +405,9 @@ export function buildSolidCountryTexture(
 
   const lonToX = (lon: number) => ((lon + 180) / 360) * width;
   const latToY = (lat: number) => ((90 - lat) / 180) * height;
+
+  // Draw country borders after fills for crisp edges
+  const borderPaths: Array<{ ring: number[][]; color: string }> = [];
 
   for (const feature of geoData.features) {
     const color = countryColorMap[feature.id] ?? "#ffffff";
@@ -425,10 +428,28 @@ export function buildSolidCountryTexture(
       }
       ctx.closePath();
       ctx.fill();
+      borderPaths.push({ ring, color });
     }
   }
 
+  // Render subtle country borders for definition
+  ctx.lineWidth = 1.5;
+  ctx.strokeStyle = "rgba(0, 180, 220, 0.12)";
+  for (const { ring } of borderPaths) {
+    ctx.beginPath();
+    ctx.moveTo(lonToX(ring[0][0]), latToY(ring[0][1]));
+    for (let i = 1; i < ring.length; i++) {
+      ctx.lineTo(lonToX(ring[i][0]), latToY(ring[i][1]));
+    }
+    ctx.closePath();
+    ctx.stroke();
+  }
+
   const texture = new THREE.CanvasTexture(canvas);
+  texture.minFilter = THREE.LinearMipmapLinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  texture.anisotropy = 16;
+  texture.generateMipmaps = true;
   texture.needsUpdate = true;
   return texture;
 }

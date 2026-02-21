@@ -423,12 +423,14 @@ function LandmassDots({ geoData, severityZones }: { geoData: GeoData; severityZo
 function ThreatSpikes({
   threats,
   spikeMode,
+  spikeColorMode,
   onHover,
   onLeave,
   onClick,
 }: {
   threats: ActiveThreat[];
   spikeMode: "fundingGap" | "severity";
+  spikeColorMode: "default" | "spectrum";
   onHover: (instanceId: number, x: number, y: number) => void;
   onLeave: () => void;
   onClick: (instanceId: number) => void;
@@ -478,9 +480,12 @@ function ThreatSpikes({
 
       meshRef.current.setMatrixAt(i, helper.matrix);
 
-      // Color depends on spikeMode
       let color: THREE.Color;
-      if (spikeMode === "severity") {
+      if (spikeColorMode === "spectrum") {
+        // Spectrum mode: solid color per spike based on magnitude (yellow → red)
+        const t = THREE.MathUtils.clamp(threat.magnitude, 0, 1);
+        color = new THREE.Color("#ffd700").lerp(new THREE.Color("#dc2626"), t);
+      } else if (spikeMode === "severity") {
         // Severity mode: color by severity index (low = amber, high = deep red)
         const sevNorm = THREE.MathUtils.clamp(threat.severityIndex / 5, 0, 1);
         color = new THREE.Color("#ff8c42").lerp(new THREE.Color("#ff1a1a"), sevNorm);
@@ -497,7 +502,7 @@ function ThreatSpikes({
     if (meshRef.current.instanceColor) {
       meshRef.current.instanceColor.needsUpdate = true;
     }
-  }, [threats, up, spikeMode]);
+  }, [threats, up, spikeMode, spikeColorMode]);
 
   if (threats.length === 0) return null;
 
@@ -581,6 +586,7 @@ function GlobeCore({
   selectedCountryIso3,
   globeFocusIso3,
   spikeMode,
+  spikeColorMode,
   mapStyle,
   solidMapTexture,
   bboxes,
@@ -599,6 +605,7 @@ function GlobeCore({
   selectedCountryIso3: string | null;
   globeFocusIso3: string | null;
   spikeMode: "fundingGap" | "severity";
+  spikeColorMode: "default" | "spectrum";
   mapStyle: "dots" | "solid";
   solidMapTexture: THREE.CanvasTexture | null;
   bboxes: FeatureBBox[];
@@ -626,8 +633,8 @@ function GlobeCore({
             <LandmassDots geoData={geoData} severityZones={severityZones} />
           </>
         ) : solidMapTexture ? (
-          <mesh>
-            <sphereGeometry args={[GLOBE_RADIUS * 0.985, 64, 64]} />
+          <mesh rotation={[0, -Math.PI / 2, 0]}>
+            <sphereGeometry args={[GLOBE_RADIUS * 0.985, 128, 64]} />
             <meshBasicMaterial map={solidMapTexture} toneMapped={false} />
           </mesh>
         ) : (
@@ -648,6 +655,7 @@ function GlobeCore({
         <ThreatSpikes
           threats={threats}
           spikeMode={spikeMode}
+          spikeColorMode={spikeColorMode}
           onHover={onSpikeHover}
           onLeave={onSpikeLeave}
           onClick={onSpikeClick}
@@ -703,6 +711,8 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
     spikeMode,
     mapStyle,
     setMapStyle,
+    spikeColorMode,
+    setSpikeColorMode,
   } = useAppContext();
   const [spikeTooltip, setSpikeTooltip] = useState<HoveredSpike | null>(null);
   const [countryTooltip, setCountryTooltip] = useState<CountryHoverData | null>(null);
@@ -838,6 +848,7 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
           selectedCountryIso3={selectedCountryIso3}
           globeFocusIso3={globeFocusIso3}
           spikeMode={spikeMode}
+          spikeColorMode={spikeColorMode}
           mapStyle={mapStyle}
           solidMapTexture={solidMapTexture}
           bboxes={bboxes}
@@ -860,13 +871,12 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
         <div
           className="pointer-events-none absolute z-30"
           style={{
-            left: Math.min(Math.max(spikeTooltip.x, 60), (containerRef.current?.clientWidth ?? 300) - 60),
+            left: Math.min(Math.max(spikeTooltip.x + 16, 12), (containerRef.current?.clientWidth ?? 300) - 180),
             top: Math.max(spikeTooltip.y - 8, 20),
-            transform: "translate(-50%, -100%)",
-            textShadow: "0 1px 6px rgba(0,0,0,0.95), 0 0 3px rgba(0,0,0,0.8)",
+            transform: "translateY(-100%)",
           }}
         >
-          <div className="flex flex-col items-center gap-0.5 px-1">
+          <div className="flex flex-col items-start gap-0.5 px-3 py-2 rounded-lg bg-black/90 backdrop-blur-md border border-cyan-500/25 shadow-[0_0_16px_rgba(0,200,255,0.12)]">
             <p className="text-[12px] font-semibold font-mono text-cyan-100 whitespace-nowrap">{spikeTooltip.countryName}</p>
             {spikeTooltip.severityIndex > 0 && (
               <span className="text-[11px] font-mono font-bold text-red-400">
@@ -887,13 +897,12 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
         <div
           className="pointer-events-none absolute z-30"
           style={{
-            left: Math.min(Math.max(countryTooltip.x, 60), (containerRef.current?.clientWidth ?? 300) - 60),
+            left: Math.min(Math.max(countryTooltip.x + 16, 12), (containerRef.current?.clientWidth ?? 300) - 180),
             top: Math.max(countryTooltip.y - 8, 20),
-            transform: "translate(-50%, -100%)",
-            textShadow: "0 1px 6px rgba(0,0,0,0.95), 0 0 3px rgba(0,0,0,0.8)",
+            transform: "translateY(-100%)",
           }}
         >
-          <div className="flex flex-col items-center gap-0.5 px-1">
+          <div className="flex flex-col items-start gap-0.5 px-3 py-2 rounded-lg bg-black/90 backdrop-blur-md border border-cyan-500/25 shadow-[0_0_16px_rgba(0,200,255,0.12)]">
             <p className="text-[12px] font-semibold font-mono text-cyan-100 whitespace-nowrap">{countryTooltip.countryName}</p>
             {countryTooltip.hasData ? (
               <>
@@ -918,13 +927,55 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
       )}
 
       {/* Data label — what the spikes currently represent */}
-      <div className="absolute bottom-4 left-4 z-20">
+      <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2 items-start">
+        {/* Spike color mode toggle */}
+        <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/20">
+          <span className={`text-[10px] font-mono cursor-pointer transition-colors ${spikeColorMode === "default" ? "text-cyan-400" : "text-cyan-400/40"}`} onClick={() => setSpikeColorMode("default")}>
+            Default
+          </span>
+          <button
+            onClick={() => setSpikeColorMode(spikeColorMode === "default" ? "spectrum" : "default")}
+            className="relative w-8 h-4 rounded-full transition-colors"
+            style={{ backgroundColor: spikeColorMode === "spectrum" ? "rgba(255,180,40,0.35)" : "rgba(34,211,238,0.1)" }}
+            aria-label="Toggle spike color mode"
+          >
+            <span
+              className="absolute top-0.5 h-3 w-3 rounded-full transition-all"
+              style={{
+                left: spikeColorMode === "default" ? "2px" : "calc(100% - 14px)",
+                backgroundColor: spikeColorMode === "spectrum" ? "#fbbf24" : "#22d3ee",
+              }}
+            />
+          </button>
+          <span className={`text-[10px] font-mono cursor-pointer transition-colors ${spikeColorMode === "spectrum" ? "text-amber-400" : "text-cyan-400/40"}`} onClick={() => setSpikeColorMode("spectrum")}>
+            Spectrum
+          </span>
+        </div>
         <div className="px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/20">
           <span className="text-[10px] font-mono text-cyan-400/70 uppercase tracking-widest">
             Spikes: {spikeMode === "fundingGap" ? "Funding Gap" : "Severity"}
           </span>
         </div>
       </div>
+
+      {/* Legend — spectrum key */}
+      {spikeColorMode === "spectrum" && (
+        <div className="absolute top-4 left-4 z-20">
+          <div className="px-3 py-2.5 rounded-lg bg-black/85 backdrop-blur-sm border border-cyan-500/20 space-y-1.5">
+            <p className="text-[9px] font-mono text-cyan-400/60 uppercase tracking-widest">
+              {spikeMode === "fundingGap" ? "Funding Gap" : "Severity"} Scale
+            </p>
+            <div className="flex items-center gap-2">
+              <span className="text-[9px] font-mono text-cyan-400/50">Low</span>
+              <div className="w-28 h-2.5 rounded-full overflow-hidden" style={{ background: "linear-gradient(to right, #ffd700, #f59e0b, #ef4444, #dc2626)" }} />
+              <span className="text-[9px] font-mono text-cyan-400/50">High</span>
+            </div>
+            <p className="text-[8px] font-mono text-cyan-400/35">
+              {spikeMode === "fundingGap" ? "Larger gap = taller & redder spike" : "Higher severity = taller & redder spike"}
+            </p>
+          </div>
+        </div>
+      )}
 
       {/* Map style toggle */}
       <div className="absolute bottom-4 right-4 z-20">

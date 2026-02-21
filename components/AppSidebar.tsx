@@ -125,7 +125,7 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
       const costPerReached = c.reachedPeople > 0 ? c.totalAllocations / c.reachedPeople : 0;
       const reachPct = c.targetedPeople > 0 ? Math.round((c.reachedPeople / c.targetedPeople) * 100) : 0;
       return {
-        name: c.cluster.length > 10 ? c.cluster.slice(0, 10) + "…" : c.cluster,
+        name: c.cluster.length > 14 ? c.cluster.slice(0, 14) + "…" : c.cluster,
         fullName: c.cluster,
         cbpf: Math.round(c.totalAllocations / 1_000),
         costPerTargeted: Math.round(costPerTargeted * 10) / 10,
@@ -226,8 +226,8 @@ function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] }) {
             .slice(0, 6)
             .map((d, idx) => (
               <div key={idx} className="flex items-center gap-2 text-[9px] font-mono">
-                <span className="text-muted-foreground truncate flex-1 min-w-0">
-                  {d.cluster.length > 18 ? d.cluster.slice(0, 18) + "…" : d.cluster}
+                <span className="text-muted-foreground flex-1 min-w-0 break-words leading-tight">
+                  {d.cluster}
                 </span>
                 {d.reached === 0 && d.alloc > 0 && (
                   <span className="text-[8px] px-1 py-0 rounded bg-red-500/20 text-red-400 border border-red-500/30 font-bold shrink-0">
@@ -611,7 +611,7 @@ function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
     return [...clusterMap.entries()].map(([k, v]) => {
       const costPerTargeted = v.targetedPeople > 0 ? v.allocations / v.targetedPeople : 0;
       const costPerReached = v.reached > 0 ? v.allocations / v.reached : 0;
-      const name = k.length > 10 ? k.slice(0, 10) + "…" : k;
+      const name = k.length > 14 ? k.slice(0, 14) + "…" : k;
       return {
         name,
         fullName: k,
@@ -978,27 +978,11 @@ function CategoryDetailView({
   );
 }
 
-// ── Crises Tab ─────────────────────────────────────────────────────────────────
-function CrisesTab() {
-  const { data, activeCrisis, setActiveCrisis, spikeMode, setSpikeMode } = useAppContext();
-  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
-
-  // Build category list sorted by crisis count desc — must be before any early returns
-  const categoriesWithCounts = useMemo(() => {
-    const map = new Map<string, number>();
-    for (const c of data.crises) {
-      for (const cat of c.categories) {
-        map.set(cat, (map.get(cat) ?? 0) + 1);
-      }
-    }
-    return [...map.entries()]
-      .sort((a, b) => b[1] - a[1])
-      .map(([cat, count]) => ({ cat, count }));
-  }, [data.crises]);
-
-  // Spike mode toggle — always visible at top
-  const spikeModeToggle = (
-    <div className="flex items-center gap-2 px-3 py-2 border-b border-cyan-500/10 shrink-0">
+// ── Spike Selector (above tabs, always visible) ───────────────────────────────
+function SpikeSelector() {
+  const { spikeMode, setSpikeMode } = useAppContext();
+  return (
+    <div className="flex items-center gap-2 px-3 py-2 border-b border-cyan-500/10 shrink-0 mt-2">
       <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest">Spikes</span>
       <div className="flex rounded-md border border-cyan-500/20 overflow-hidden ml-auto">
         <button
@@ -1024,40 +1008,48 @@ function CrisesTab() {
       </div>
     </div>
   );
+}
+
+// ── Crises Tab ─────────────────────────────────────────────────────────────────
+function CrisesTab() {
+  const { data, activeCrisis, setActiveCrisis } = useAppContext();
+  const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
+
+  // Build category list sorted by crisis count desc — must be before any early returns
+  const categoriesWithCounts = useMemo(() => {
+    const map = new Map<string, number>();
+    for (const c of data.crises) {
+      for (const cat of c.categories) {
+        map.set(cat, (map.get(cat) ?? 0) + 1);
+      }
+    }
+    return [...map.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([cat, count]) => ({ cat, count }));
+  }, [data.crises]);
 
   // If a crisis is active, show its detail
   if (activeCrisis) {
     return (
-      <div className="flex flex-col h-full min-h-0">
-        {spikeModeToggle}
-        <div className="flex-1 min-h-0">
-          <CrisisDetailView
-            crisis={activeCrisis}
-            onBack={() => setActiveCrisis(null)}
-          />
-        </div>
-      </div>
+      <CrisisDetailView
+        crisis={activeCrisis}
+        onBack={() => setActiveCrisis(null)}
+      />
     );
   }
 
   // If a category is selected, show category detail
   if (selectedCategory) {
     return (
-      <div className="flex flex-col h-full min-h-0">
-        {spikeModeToggle}
-        <div className="flex-1 min-h-0">
-          <CategoryDetailView
-            category={selectedCategory}
-            onBack={() => setSelectedCategory(null)}
-          />
-        </div>
-      </div>
+      <CategoryDetailView
+        category={selectedCategory}
+        onBack={() => setSelectedCategory(null)}
+      />
     );
   }
 
   return (
     <div className="flex flex-col h-full min-h-0">
-      {spikeModeToggle}
       <ScrollArea className="flex-1 min-h-0">
         <div className="flex flex-col gap-1 px-2 pb-4 pt-1">
           <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/40 px-1 pb-1">
@@ -1360,7 +1352,7 @@ function GlobalTab() {
         const gap = Math.max(0, of_.totalRequirements - of_.totalFundingAll);
         return {
           iso3: c.iso3,
-          name: c.name.length > 10 ? c.name.slice(0, 10) + "…" : c.name,
+          name: c.name.length > 14 ? c.name.slice(0, 14) + "…" : c.name,
           fullName: c.name,
           onAppeal: Math.round(of_.totalFunding / 1_000_000),
           offAppeal: Math.round(of_.offAppealFunding / 1_000_000),
@@ -1451,7 +1443,7 @@ function GlobalTab() {
             className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
-            Global
+            Overview
           </button>
           <span className="text-cyan-500/30 text-xs">/</span>
           <span className="text-[11px] font-mono text-cyan-300/80 truncate">All Absolute Funding Gaps</span>
@@ -1659,7 +1651,7 @@ function GlobalTab() {
                       tick={{ fontSize: 8, fill: "rgba(0,200,255,0.6)", fontFamily: "monospace" }}
                       tickLine={false}
                       axisLine={false}
-                      width={62}
+                      width={78}
                     />
                     <Tooltip
                       contentStyle={chartTooltipStyle}
@@ -1788,7 +1780,7 @@ function GlobalTab() {
 
 // ── Main App Sidebar ───────────────────────────────────────────────────────────
 export default function AppSidebar() {
-  const { sidebarTab, setSidebarTab, activeCrisis } = useAppContext();
+  const { sidebarTab, setSidebarTab } = useAppContext();
 
   return (
     <Sidebar
@@ -1815,24 +1807,16 @@ export default function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="relative z-10 p-0 overflow-hidden flex flex-col">
-        {activeCrisis && (
-          <div className="mx-3 mt-3 rounded border border-red-500/30 bg-red-500/5 p-2.5 shadow-[0_0_15px_rgba(255,30,30,0.1)] group-data-[collapsible=icon]:hidden shrink-0">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="h-3.5 w-3.5 text-red-400 shrink-0" />
-              <span className="text-[11px] font-mono font-medium text-red-400 truncate">{activeCrisis.crisisName}</span>
-            </div>
-          </div>
-        )}
-
         <div className="group-data-[collapsible=icon]:hidden flex flex-col flex-1 min-h-0 px-2 pb-2">
+          <SpikeSelector />
           <Tabs
             value={sidebarTab}
-            onValueChange={(v) => setSidebarTab(v as "crises" | "countries" | "global")}
+            onValueChange={(v) => setSidebarTab(v as "crises" | "countries" | "overview")}
             className="flex flex-col flex-1 min-h-0"
           >
             <TabsList className="w-full grid grid-cols-3 h-9 mt-2 bg-black/60 border border-cyan-500/15 shrink-0">
               <TabsTrigger
-                value="global"
+                value="overview"
                 className="text-xs font-mono data-[state=active]:bg-cyan-500/15 data-[state=active]:text-cyan-300 data-[state=active]:shadow-[0_0_8px_rgba(0,200,255,0.2)] text-cyan-400/50"
               >
                 <Globe2 className="h-3.5 w-3.5 mr-1.5" />
@@ -1854,7 +1838,7 @@ export default function AppSidebar() {
               </TabsTrigger>
             </TabsList>
 
-            <TabsContent value="global" className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden flex flex-col">
+            <TabsContent value="overview" className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden flex flex-col">
               <GlobalTab />
             </TabsContent>
             <TabsContent value="crises" className="flex-1 min-h-0 mt-2 data-[state=inactive]:hidden flex flex-col">
