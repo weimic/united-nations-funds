@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ChatOpenAI } from "@langchain/openai";
+import { ChatGroq } from "@langchain/groq";
 import { HuggingFaceInference } from "@langchain/community/llms/hf";
 import { RunnableSequence, RunnableLambda } from "@langchain/core/runnables";
 import { StringOutputParser } from "@langchain/core/output_parsers";
@@ -38,8 +39,9 @@ const MAX_CONTENT_LENGTH = 2_000;
 //   2. Serverless cold starts don't allocate objects this route never uses.
 
 let _primaryLlm: ChatOpenAI | null = null;
+let _groqLlm: ChatGroq | null = null;
 let _hfTextLlm: HuggingFaceInference | null = null;
-let _fallbackLlm: RunnableLambda<BaseMessage[], AIMessageChunk> | null = null;
+let _hfFallbackLlm: RunnableLambda<BaseMessage[], AIMessageChunk> | null = null;
 let _ragChain: RunnableSequence<{ messages: MessageInput[] }, string> | null = null;
 
 /**
@@ -69,74 +71,85 @@ function getPrimaryLlm(): ChatOpenAI {
 }
 
 /**
- * Serialise a `BaseMessage[]` into a Mistral v0.3 instruct prompt string.
+ * Serialise a `BaseMessage[]` into a ChatML-style prompt string.
  *
- * Mistral format: the system message must be merged into the first [INST] block
- * alongside the first user turn — it cannot stand alone as its own [INST].
- *
- *   <s>[INST] {system}\n\n{user_1} [/INST] {assistant_1}</s>
- *   <s>[INST] {user_2} [/INST] {assistant_2}</s> …
+ * This is a better default for Qwen Instruct models than Mistral's `[INST]`.
+ * It also tends to improve adherence to "respond ONLY with JSON" constraints.
  */
-function messagesToMistralPrompt(messages: BaseMessage[]): string {
-  const systemMsg = messages.find((m) => m instanceof SystemMessage);
-  const systemContent = systemMsg ? String(systemMsg.content) : "";
-  const turns = messages.filter((m) => !(m instanceof SystemMessage));
-
+function messagesToChatMlPrompt(messages: BaseMessage[]): string {
   const parts: string[] = [];
-  let firstUser = true;
 
-  for (const msg of turns) {
-    if (msg instanceof HumanMessage) {
-      const userContent = String(msg.content);
-      const content =
-        firstUser && systemContent
-          ? `${systemContent}\n\n${userContent}`
-          : userContent;
-      parts.push(`<s>[INST] ${content} [/INST]`);
-      firstUser = false;
-    } else {
-      // AIMessage or other — assistant turn closes the exchange
-      parts.push(` ${String(msg.content)}</s>`);
+  for (const msg of messages) {
+    if (msg instanceof SystemMessage) {
+      parts.push(`<|im_start|>system\n${String(msg.content)}<|im_end|>`);
+      continue;
     }
+    if (msg instanceof HumanMessage) {
+      parts.push(`<|im_start|>user\n${String(msg.content)}<|im_end|>`);
+      continue;
+    }
+    // AIMessage or other
+    parts.push(`<|im_start|>assistant\n${String(msg.content)}<|im_end|>`);
   }
 
-  return parts.join("").trim();
+  // Signal the model to continue as assistant.
+  parts.push("<|im_start|>assistant\n");
+  return parts.join("\n").trim();
 }
 
 /**
- * Fallback LLM: Mistral-7B via HuggingFace Inference API.
+ * Primary Fallback LLM: Llama 3.3 70B via Groq.
  *
- * @langchain/community@1.1.17 ships `HuggingFaceInference` as a text LLM
- * (string in → string out).  We wrap it in a `RunnableLambda` that accepts
- * `BaseMessage[]` and returns an `AIMessageChunk` so the Runnable signature is
- * identical to `ChatOpenAI` — a requirement for `.withFallbacks()`.
+ * ChatGroq implements the same ChatModel interface as ChatOpenAI, so it plugs
+ * directly into `.withFallbacks()` with no wrapper needed.
  */
-function getFallbackLlm(): RunnableLambda<BaseMessage[], AIMessageChunk> {
-  if (!_fallbackLlm) {
+function getGroqFallbackLlm(): ChatGroq {
+  if (!_groqLlm) {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new Error("Missing env var: GROQ_API_KEY");
+    _groqLlm = new ChatGroq({
+      model: "llama-3.3-70b-versatile",
+      temperature: 0,
+      maxTokens: 1024,
+      apiKey,
+    });
+  }
+  return _groqLlm;
+}
+
+/**
+ * Secondary Fallback LLM: Meta-Llama-3-8B-Instruct via HuggingFace Inference API.
+ *
+ * Last line of defence if both OpenRouter and Groq are unavailable.
+ *
+ * `HuggingFaceInference` is a text LLM (string in → string out). We wrap it in a
+ * `RunnableLambda` that accepts `BaseMessage[]` and returns an `AIMessageChunk`
+ * so the Runnable signature matches `ChatOpenAI` — required for `.withFallbacks()`.
+ */
+function getHfFallbackLlm(): RunnableLambda<BaseMessage[], AIMessageChunk> {
+  if (!_hfFallbackLlm) {
     const apiKey = process.env.HF_TOKEN;
     if (!apiKey) throw new Error("Missing env var: HF_TOKEN");
     if (!_hfTextLlm) {
       _hfTextLlm = new HuggingFaceInference({
-        model: "mistralai/Mistral-7B-Instruct-v0.3",
+        model: "meta-llama/Meta-Llama-3-8B-Instruct",
         apiKey,
-        temperature: 0.3,
+        temperature: 0,
         maxTokens: 1024,
-        // api-inference.huggingface.co was decommissioned (HTTP 410).
-        // endpointUrl causes _prepareHFInference() to call hfi.endpoint(url),
-        // routing directly through the new HF router model URL.
-        endpointUrl: "https://router.huggingface.co/hf-inference/models/mistralai/Mistral-7B-Instruct-v0.3",
+        endpointUrl:
+          "https://router.huggingface.co/hf-inference/models/meta-llama/Meta-Llama-3-8B-Instruct",
       });
     }
     const hfTextLlm = _hfTextLlm;
-    _fallbackLlm = new RunnableLambda({
+    _hfFallbackLlm = new RunnableLambda({
       func: async (messages: BaseMessage[]): Promise<AIMessageChunk> => {
-        const prompt = messagesToMistralPrompt(messages);
+        const prompt = messagesToChatMlPrompt(messages);
         const text = await hfTextLlm.invoke(prompt);
         return new AIMessageChunk({ content: text });
       },
     });
   }
-  return _fallbackLlm;
+  return _hfFallbackLlm;
 }
 
 // ── ISO3 → Country Name Reference ──────────────────────────────────────────────
@@ -229,7 +242,7 @@ You MUST respond with ONLY a valid JSON object (no extra text before or after):
  * Returns (and caches) the full LCEL RAG pipeline:
  *   1. Retrieve top-K documents from PineconeStore using the last user message.
  *   2. Build [SystemMessage, ...history] with the retrieved context injected.
- *   3. Invoke the LLM fallback chain (OpenRouter/Llama-3 → HF/Mistral-7B).
+ *   3. Invoke the three-tier LLM fallback chain (OpenRouter/Llama-3 → Groq/Llama-3.3 → HF/Llama-3).
  *   4. Extract the raw string from the AIMessage output.
  *
  * Built lazily so env vars are validated on first request, not at module load.
@@ -237,7 +250,7 @@ You MUST respond with ONLY a valid JSON object (no extra text before or after):
 function getRagChain(): RunnableSequence<{ messages: MessageInput[] }, string> {
   if (!_ragChain) {
     const llmWithFallback = getPrimaryLlm().withFallbacks({
-      fallbacks: [getFallbackLlm()],
+      fallbacks: [getGroqFallbackLlm(), getHfFallbackLlm()],
     });
 
     _ragChain = RunnableSequence.from<{ messages: MessageInput[] }, string>([
@@ -268,7 +281,7 @@ function getRagChain(): RunnableSequence<{ messages: MessageInput[] }, string> {
         },
       }),
 
-      // Step 3 — Primary (OpenRouter/Llama-3) with automatic HF/Mistral fallback
+      // Step 3 — Primary (OpenRouter/Llama-3) → Groq/Llama-3.3 → HF/Llama-3 fallback
       llmWithFallback,
 
       // Step 4 — Pull the text string out of the AIMessage
