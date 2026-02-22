@@ -18,6 +18,35 @@ const HF_ROUTER_URL = `https://router.huggingface.co/hf-inference/models/${HF_EM
 /** HF Inference API can handle up to ~50 inputs per call; keep headroom. */
 const BATCH_SIZE = 32;
 
+// ── ISO3 → Country Name ────────────────────────────────────────────────────────
+// Embedded directly so ingested RAG sentences use human-readable country names
+// rather than bare ISO3 codes. This eliminates the root cause of LLM responses
+// like "UGA (UGA)" or "AGO" being confused with Congo.
+
+function loadIso3ToName(): Map<string, string> {
+  const raw = readFileSync(join(__dirname, "../public/data/countries.geo.json"), "utf-8");
+  const geo = JSON.parse(raw) as { features: Array<{ id: string; properties: { name: string } }> };
+  const map = new Map<string, string>();
+  for (const f of geo.features) {
+    map.set(f.id, f.properties.name);
+  }
+  // Common aliases missing from GeoJSON
+  const extras: Record<string, string> = {
+    COD: "Democratic Republic of the Congo", PSE: "Palestine",
+    SSD: "South Sudan", CAF: "Central African Republic",
+  };
+  for (const [code, name] of Object.entries(extras)) {
+    if (!map.has(code)) map.set(code, name);
+  }
+  return map;
+}
+
+/** Resolve ISO3 → "CountryName (ISO3)" for use in embedded sentences. */
+function countryLabel(iso3: string, iso3ToName: Map<string, string>): string {
+  const name = iso3ToName.get(iso3);
+  return name ? `${name} (${iso3})` : iso3;
+}
+
 // ── Helpers ────────────────────────────────────────────────────────────────────
 
 function formatDollars(n: number): string {
@@ -89,7 +118,7 @@ interface CrisisDetail {
   timeline?: Array<{ date: string; name: string; description: string }>;
 }
 
-function buildFtsSentences(): Array<{ text: string; metadata: Record<string, string> }> {
+function buildFtsSentences(iso3ToName: Map<string, string>): Array<{ text: string; metadata: Record<string, string> }> {
   const csv = readFileSync(join(__dirname, "../public/data/fts_requirements_funding_global.csv"), "utf-8");
   const { data } = Papa.parse<FtsRow>(csv, { header: true, skipEmptyLines: true });
 
@@ -103,6 +132,7 @@ function buildFtsSentences(): Array<{ text: string; metadata: Record<string, str
     const iso3 = row.countryCode;
     if (!iso3) continue;
 
+    const label = countryLabel(iso3, iso3ToName);
     const requirements = parseFloat(row.requirements) || 0;
     const funding = parseFloat(row.funding) || 0;
     const pct = row.percentFunded ? parseInt(row.percentFunded) : 0;
@@ -111,13 +141,13 @@ function buildFtsSentences(): Array<{ text: string; metadata: Record<string, str
     if (planName === "Not specified") {
       // Off-appeal row
       if (funding > 0) {
-        const text = `In ${TARGET_YEAR}, ${iso3} received ${formatDollars(funding)} in off-appeal humanitarian funding (outside formal appeals).`;
+        const text = `In ${TARGET_YEAR}, ${label} received ${formatDollars(funding)} in off-appeal humanitarian funding (outside formal appeals).`;
         results.push({ text, metadata: { iso3, type: "funding", source: "fts_off_appeal" } });
       }
     } else {
       // On-appeal row
       const gap = requirements - funding;
-      const text = `In ${TARGET_YEAR}, ${iso3} had humanitarian requirements of ${formatDollars(requirements)} under the "${planName}" (${row.typeName || "appeal"}), received ${formatDollars(funding)} (${pct}% funded), leaving a funding gap of ${formatDollars(gap)}.`;
+      const text = `In ${TARGET_YEAR}, ${label} had humanitarian requirements of ${formatDollars(requirements)} under the "${planName}" (${row.typeName || "appeal"}), received ${formatDollars(funding)} (${pct}% funded), leaving a funding gap of ${formatDollars(gap)}.`;
       results.push({ text, metadata: { iso3, type: "funding", source: "fts_on_appeal" } });
     }
   }
@@ -211,8 +241,12 @@ async function main() {
     }
   }
 
+  // Load ISO3 → country name mapping from GeoJSON
+  const iso3ToName = loadIso3ToName();
+  console.log(`Loaded ${iso3ToName.size} country name mappings`);
+
   // Build all sentences
-  const ftsSentences = buildFtsSentences();
+  const ftsSentences = buildFtsSentences(iso3ToName);
   console.log(`FTS sentences: ${ftsSentences.length}`);
 
   const cbpfSentences = buildCbpfSentences();

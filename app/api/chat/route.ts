@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { ChatOpenAI } from "@langchain/openai";
+import { ChatGroq } from "@langchain/groq";
 import { HuggingFaceInference } from "@langchain/community/llms/hf";
 import { RunnableSequence, RunnableLambda } from "@langchain/core/runnables";
 import { StringOutputParser } from "@langchain/core/output_parsers";
@@ -38,8 +39,9 @@ const MAX_CONTENT_LENGTH = 2_000;
 //   2. Serverless cold starts don't allocate objects this route never uses.
 
 let _primaryLlm: ChatOpenAI | null = null;
+let _groqLlm: ChatGroq | null = null;
 let _hfTextLlm: HuggingFaceInference | null = null;
-let _fallbackLlm: RunnableLambda<BaseMessage[], AIMessageChunk> | null = null;
+let _hfFallbackLlm: RunnableLambda<BaseMessage[], AIMessageChunk> | null = null;
 let _ragChain: RunnableSequence<{ messages: MessageInput[] }, string> | null = null;
 
 /**
@@ -69,103 +71,169 @@ function getPrimaryLlm(): ChatOpenAI {
 }
 
 /**
- * Serialise a `BaseMessage[]` into a Mistral v0.3 instruct prompt string.
+ * Serialise a `BaseMessage[]` into a ChatML-style prompt string.
  *
- * Mistral format: the system message must be merged into the first [INST] block
- * alongside the first user turn — it cannot stand alone as its own [INST].
- *
- *   <s>[INST] {system}\n\n{user_1} [/INST] {assistant_1}</s>
- *   <s>[INST] {user_2} [/INST] {assistant_2}</s> …
+ * This is a better default for Qwen Instruct models than Mistral's `[INST]`.
+ * It also tends to improve adherence to "respond ONLY with JSON" constraints.
  */
-function messagesToMistralPrompt(messages: BaseMessage[]): string {
-  const systemMsg = messages.find((m) => m instanceof SystemMessage);
-  const systemContent = systemMsg ? String(systemMsg.content) : "";
-  const turns = messages.filter((m) => !(m instanceof SystemMessage));
-
+function messagesToChatMlPrompt(messages: BaseMessage[]): string {
   const parts: string[] = [];
-  let firstUser = true;
 
-  for (const msg of turns) {
-    if (msg instanceof HumanMessage) {
-      const userContent = String(msg.content);
-      const content =
-        firstUser && systemContent
-          ? `${systemContent}\n\n${userContent}`
-          : userContent;
-      parts.push(`<s>[INST] ${content} [/INST]`);
-      firstUser = false;
-    } else {
-      // AIMessage or other — assistant turn closes the exchange
-      parts.push(` ${String(msg.content)}</s>`);
+  for (const msg of messages) {
+    if (msg instanceof SystemMessage) {
+      parts.push(`<|im_start|>system\n${String(msg.content)}<|im_end|>`);
+      continue;
     }
+    if (msg instanceof HumanMessage) {
+      parts.push(`<|im_start|>user\n${String(msg.content)}<|im_end|>`);
+      continue;
+    }
+    // AIMessage or other
+    parts.push(`<|im_start|>assistant\n${String(msg.content)}<|im_end|>`);
   }
 
-  return parts.join("").trim();
+  // Signal the model to continue as assistant.
+  parts.push("<|im_start|>assistant\n");
+  return parts.join("\n").trim();
 }
 
 /**
- * Fallback LLM: Mistral-7B via HuggingFace Inference API.
+ * Primary Fallback LLM: Llama 3.3 70B via Groq.
  *
- * @langchain/community@1.1.17 ships `HuggingFaceInference` as a text LLM
- * (string in → string out).  We wrap it in a `RunnableLambda` that accepts
- * `BaseMessage[]` and returns an `AIMessageChunk` so the Runnable signature is
- * identical to `ChatOpenAI` — a requirement for `.withFallbacks()`.
+ * ChatGroq implements the same ChatModel interface as ChatOpenAI, so it plugs
+ * directly into `.withFallbacks()` with no wrapper needed.
  */
-function getFallbackLlm(): RunnableLambda<BaseMessage[], AIMessageChunk> {
-  if (!_fallbackLlm) {
+function getGroqFallbackLlm(): ChatGroq {
+  if (!_groqLlm) {
+    const apiKey = process.env.GROQ_API_KEY;
+    if (!apiKey) throw new Error("Missing env var: GROQ_API_KEY");
+    _groqLlm = new ChatGroq({
+      model: "llama-3.3-70b-versatile",
+      temperature: 0,
+      maxTokens: 1024,
+      apiKey,
+    });
+  }
+  return _groqLlm;
+}
+
+/**
+ * Secondary Fallback LLM: Meta-Llama-3-8B-Instruct via HuggingFace Inference API.
+ *
+ * Last line of defence if both OpenRouter and Groq are unavailable.
+ *
+ * `HuggingFaceInference` is a text LLM (string in → string out). We wrap it in a
+ * `RunnableLambda` that accepts `BaseMessage[]` and returns an `AIMessageChunk`
+ * so the Runnable signature matches `ChatOpenAI` — required for `.withFallbacks()`.
+ */
+function getHfFallbackLlm(): RunnableLambda<BaseMessage[], AIMessageChunk> {
+  if (!_hfFallbackLlm) {
     const apiKey = process.env.HF_TOKEN;
     if (!apiKey) throw new Error("Missing env var: HF_TOKEN");
     if (!_hfTextLlm) {
       _hfTextLlm = new HuggingFaceInference({
-        model: "mistralai/Mistral-7B-Instruct-v0.3",
+        model: "meta-llama/Meta-Llama-3-8B-Instruct",
         apiKey,
-        temperature: 0.3,
+        temperature: 0,
         maxTokens: 1024,
-        // api-inference.huggingface.co was decommissioned (HTTP 410).
-        // endpointUrl causes _prepareHFInference() to call hfi.endpoint(url),
-        // routing directly through the new HF router model URL.
-        endpointUrl: "https://router.huggingface.co/hf-inference/models/mistralai/Mistral-7B-Instruct-v0.3",
+        endpointUrl:
+          "https://router.huggingface.co/hf-inference/models/meta-llama/Meta-Llama-3-8B-Instruct",
       });
     }
     const hfTextLlm = _hfTextLlm;
-    _fallbackLlm = new RunnableLambda({
+    _hfFallbackLlm = new RunnableLambda({
       func: async (messages: BaseMessage[]): Promise<AIMessageChunk> => {
-        const prompt = messagesToMistralPrompt(messages);
+        const prompt = messagesToChatMlPrompt(messages);
         const text = await hfTextLlm.invoke(prompt);
         return new AIMessageChunk({ content: text });
       },
     });
   }
-  return _fallbackLlm;
+  return _hfFallbackLlm;
+}
+
+// ── ISO3 → Country Name Reference ──────────────────────────────────────────────
+// Authoritative mapping injected into the system prompt so the LLM (especially
+// the weaker Mistral-7B fallback) never has to guess country names from codes.
+
+const ISO3_TO_NAME: Record<string, string> = {
+  AFG: "Afghanistan", AGO: "Angola", ALB: "Albania", ARG: "Argentina",
+  ARM: "Armenia", AZE: "Azerbaijan", BDI: "Burundi", BEN: "Benin",
+  BFA: "Burkina Faso", BGD: "Bangladesh", BLR: "Belarus", BOL: "Bolivia",
+  BRA: "Brazil", CAF: "Central African Republic", CHL: "Chile",
+  CHN: "China", CIV: "Côte d'Ivoire", CMR: "Cameroon", COD: "Democratic Republic of the Congo",
+  COG: "Republic of the Congo", COL: "Colombia", CRI: "Costa Rica",
+  CUB: "Cuba", DJI: "Djibouti", DOM: "Dominican Republic", DZA: "Algeria",
+  ECU: "Ecuador", EGY: "Egypt", ERI: "Eritrea", ETH: "Ethiopia",
+  GEO: "Georgia", GHA: "Ghana", GIN: "Guinea", GMB: "Gambia",
+  GTM: "Guatemala", GNB: "Guinea-Bissau", GUY: "Guyana", HND: "Honduras",
+  HTI: "Haiti", IDN: "Indonesia", IND: "India", IRN: "Iran",
+  IRQ: "Iraq", ISR: "Israel", JOR: "Jordan", KEN: "Kenya",
+  KGZ: "Kyrgyzstan", KHM: "Cambodia", LAO: "Laos", LBN: "Lebanon",
+  LBR: "Liberia", LBY: "Libya", LKA: "Sri Lanka", LSO: "Lesotho",
+  MAR: "Morocco", MDA: "Moldova", MDG: "Madagascar", MEX: "Mexico",
+  MLI: "Mali", MMR: "Myanmar", MNG: "Mongolia", MOZ: "Mozambique",
+  MRT: "Mauritania", MWI: "Malawi", NAM: "Namibia", NER: "Niger",
+  NGA: "Nigeria", NIC: "Nicaragua", NPL: "Nepal", PAK: "Pakistan",
+  PAN: "Panama", PER: "Peru", PHL: "Philippines", PNG: "Papua New Guinea",
+  PRK: "North Korea", PRY: "Paraguay", PSE: "Palestine",
+  RWA: "Rwanda", SAU: "Saudi Arabia", SDN: "Sudan", SEN: "Senegal",
+  SLE: "Sierra Leone", SLV: "El Salvador", SOM: "Somalia",
+  SSD: "South Sudan", SWZ: "Eswatini", SYR: "Syria", TCD: "Chad",
+  TGO: "Togo", THA: "Thailand", TJK: "Tajikistan", TKM: "Turkmenistan",
+  TLS: "Timor-Leste", TUN: "Tunisia", TUR: "Turkey", TZA: "Tanzania",
+  UGA: "Uganda", UKR: "Ukraine", URY: "Uruguay", UZB: "Uzbekistan",
+  VEN: "Venezuela", VNM: "Vietnam", YEM: "Yemen", ZAF: "South Africa",
+  ZMB: "Zambia", ZWE: "Zimbabwe",
+};
+
+/** Resolve an ISO3 code to "CountryName (ISO3)". Returns the code unchanged if no mapping exists. */
+function iso3ToLabel(code: string): string {
+  const name = ISO3_TO_NAME[code.toUpperCase()];
+  return name ? `${name} (${code.toUpperCase()})` : code;
 }
 
 // ── System Prompt ──────────────────────────────────────────────────────────────
+
+/**
+ * Build a compact ISO3 reference block for the system prompt.
+ * Format: "AFG=Afghanistan, AGO=Angola, …" — compact to save tokens.
+ */
+function buildIso3ReferenceBlock(): string {
+  return Object.entries(ISO3_TO_NAME)
+    .map(([code, name]) => `${code}=${name}`)
+    .join(", ");
+}
 
 function buildSystemPrompt(docs: Document[]): string {
   const context = docs
     .map((doc, i) => `[${i + 1}] ${doc.pageContent}`)
     .join("\n");
 
+  const iso3Ref = buildIso3ReferenceBlock();
+
   return `You are the UN Crisis Monitor AI assistant. You analyze humanitarian funding data, INFORM severity indices, and CBPF (Country-Based Pooled Fund) allocations for 2025.
+
+ISO3 COUNTRY CODE REFERENCE (use this to map codes to names):
+${iso3Ref}
+
+IMPORTANT: The retrieved context below uses ISO3 codes (e.g. "UGA", "BGD"). You MUST translate these to full country names using the reference above. For example, UGA = Uganda, BGD = Bangladesh, COL = Colombia, AGO = Angola, COD = Democratic Republic of the Congo. NEVER write a country as just its ISO3 code.
 
 RETRIEVED CONTEXT:
 ${context}
 
-INSTRUCTIONS:
-- Answer the user's question based on the context above.
-- When mentioning a specific country, include its ISO3 code in parentheses, e.g. "Sudan (SDN)".
-- If the question is primarily about one country, set "focusIso3" to that country's ISO3 code.
-- Do NOT include inline citation markers like [1], [2] in your response.
-- If the data is insufficient to answer, say so clearly.
-- Use markdown formatting for readability (bold, lists, tables where appropriate).
+RESPONSE RULES:
+1. Answer the user's question using ONLY the retrieved context above.
+2. ALWAYS use full country names with ISO3 in parentheses: "Uganda (UGA)", NOT "UGA" or "UGA (UGA)".
+3. If the question is primarily about one country, set focusIso3 to that country's 3-letter ISO3 code.
+4. Do NOT include citation markers like [1], [2].
+5. If the data is insufficient, say so clearly.
+6. Use markdown formatting (bold, bullet lists) for readability.
+7. Keep responses concise and factual. Do not add section headers like "Focus:", "Note:", or "Key Facts:" at the end.
+8. Do NOT confuse country codes. AGO is Angola, COD is Democratic Republic of the Congo, COG is Republic of the Congo.
 
-You MUST respond with valid JSON matching this exact schema:
-{
-  "message": "Your markdown-formatted response text.",
-  "focusIso3": "ISO3" or null
-}
-
-Respond ONLY with the JSON object, no other text.`;
+You MUST respond with ONLY a valid JSON object (no extra text before or after):
+{"message": "Your response here", "focusIso3": "ISO3 or null"}`;
 }
 
 // ── LCEL Retrieval Chain — lazy singleton ─────────────────────────────────────
@@ -174,7 +242,7 @@ Respond ONLY with the JSON object, no other text.`;
  * Returns (and caches) the full LCEL RAG pipeline:
  *   1. Retrieve top-K documents from PineconeStore using the last user message.
  *   2. Build [SystemMessage, ...history] with the retrieved context injected.
- *   3. Invoke the LLM fallback chain (OpenRouter/Llama-3 → HF/Mistral-7B).
+ *   3. Invoke the three-tier LLM fallback chain (OpenRouter/Llama-3 → Groq/Llama-3.3 → HF/Llama-3).
  *   4. Extract the raw string from the AIMessage output.
  *
  * Built lazily so env vars are validated on first request, not at module load.
@@ -182,7 +250,7 @@ Respond ONLY with the JSON object, no other text.`;
 function getRagChain(): RunnableSequence<{ messages: MessageInput[] }, string> {
   if (!_ragChain) {
     const llmWithFallback = getPrimaryLlm().withFallbacks({
-      fallbacks: [getFallbackLlm()],
+      fallbacks: [getGroqFallbackLlm(), getHfFallbackLlm()],
     });
 
     _ragChain = RunnableSequence.from<{ messages: MessageInput[] }, string>([
@@ -213,7 +281,7 @@ function getRagChain(): RunnableSequence<{ messages: MessageInput[] }, string> {
         },
       }),
 
-      // Step 3 — Primary (OpenRouter/Llama-3) with automatic HF/Mistral fallback
+      // Step 3 — Primary (OpenRouter/Llama-3) → Groq/Llama-3.3 → HF/Llama-3 fallback
       llmWithFallback,
 
       // Step 4 — Pull the text string out of the AIMessage
@@ -542,6 +610,74 @@ function stripJsonEnvelope(message: string): string {
   return normalizeLiteralEscapes(message);
 }
 
+// ── Post-processing: ISO3 resolution & formatting cleanup ─────────────────────
+
+/**
+ * Replace bare ISO3 codes in the response with "CountryName (ISO3)".
+ *
+ * Patterns handled:
+ *   - "UGA (UGA)"  → "Uganda (UGA)"          (code used as name with code in parens)
+ *   - "**UGA**"    → "**Uganda (UGA)**"       (bold-wrapped ISO3)
+ *   - Bare ISO3 at start of list item or sentence when not already preceded by a name
+ *
+ * Also strips trailing formatting artifacts that weaker models produce:
+ *   - Trailing "**" without a matching opener
+ *   - Trailing "Focus:" / "Note:" sections appended after the real answer
+ */
+function postProcessMessage(message: string): string {
+  let result = message;
+
+  // Fix "CODE (CODE)" → "CountryName (CODE)" — e.g. "UGA (UGA)" → "Uganda (UGA)"
+  result = result.replace(
+    /\b([A-Z]{3})\s*\(\1\)/g,
+    (_match, code: string) => iso3ToLabel(code),
+  );
+
+  // Fix bare ISO3 codes used as country names in markdown bold: "**UGA**" → "**Uganda (UGA)**"
+  result = result.replace(
+    /\*\*([A-Z]{3})\*\*/g,
+    (_match, code: string) => {
+      const name = ISO3_TO_NAME[code];
+      return name ? `**${name} (${code})**` : _match;
+    },
+  );
+
+  // Fix bare ISO3 at start of bullet/numbered list items: "- UGA:" → "- Uganda (UGA):"
+  result = result.replace(
+    /^(\s*[-*]\s+)([A-Z]{3})(\s*[:(])/gm,
+    (_match, prefix: string, code: string, suffix: string) => {
+      const name = ISO3_TO_NAME[code];
+      if (!name) return _match;
+      // If suffix is "(", the parens are already there — just fix the name
+      if (suffix.trim() === "(") return `${prefix}${name} (`;
+      return `${prefix}${name} (${code})${suffix}`;
+    },
+  );
+
+  // Fix bare ISO3 at start of sentence / after newline when followed by data
+  // e.g. "UGA: $273M" → "Uganda (UGA): $273M"
+  result = result.replace(
+    /(?:^|\n)([A-Z]{3})(\s*:\s*\$)/gm,
+    (match, code: string, suffix: string) => {
+      const name = ISO3_TO_NAME[code];
+      if (!name) return match;
+      const nl = match.startsWith("\n") ? "\n" : "";
+      return `${nl}${name} (${code})${suffix}`;
+    },
+  );
+
+  // Strip trailing "Focus:" / "Note:" sections that Mistral appends
+  result = result.replace(
+    /\n+(?:Focus|Note|Summary)\s*:\s*[^\n]*$/i,
+    "",
+  );
+
+  // Strip trailing dangling "**" (bold markers without matching opener)
+  result = result.replace(/\*\*\s*$/, "").trimEnd();
+
+  return result;
+}
+
 // ── Route Handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -633,18 +769,24 @@ export async function POST(req: NextRequest) {
     // Citations are disabled in the active pipeline — always return empty array.
     // The citation helpers above remain available for future re-enablement.
     parsed.citations = [];
-    // Sanitise focusIso3: must be a 3-char string or omitted
+    // Sanitise focusIso3: must be a 3-char string that exists in our ISO3 mapping
     if (
       typeof parsed.focusIso3 !== "string" ||
-      parsed.focusIso3.length !== 3
+      parsed.focusIso3.length !== 3 ||
+      !ISO3_TO_NAME[parsed.focusIso3.toUpperCase()]
     ) {
       parsed.focusIso3 = undefined;
+    } else {
+      parsed.focusIso3 = parsed.focusIso3.toUpperCase();
     }
 
     // Final safeguard: if `message` still looks like a raw JSON object (i.e. it
     // contains the wrapper schema keys), extract just the inner message value so
     // the user never sees the raw protocol envelope.
     parsed.message = stripJsonEnvelope(parsed.message);
+
+    // ── Post-processing: fix ISO3-only references & formatting artifacts ────
+    parsed.message = postProcessMessage(parsed.message);
 
     return NextResponse.json(parsed);
   } catch (err: unknown) {

@@ -11,6 +11,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Info, Brain, AlertTriangle } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
+
 /* ------------------------------------------------------------------ */
 /*  Sub-components for each content section                            */
 /* ------------------------------------------------------------------ */
@@ -82,8 +83,8 @@ function AboutTab() {
             reached, enabling delivery-rate analysis.
           </>,
           <>
-            <strong className="text-cyan-200/80">Crisis details</strong>{" "}
-            — narrative summaries, timelines, and external links per crisis.
+            <strong className="text-cyan-200/80">The GDELT Project & Per-Crisis Cited Sources</strong>{" "}
+            — narrative summaries, timelines, and external links 
           </>,
         ]}
       />
@@ -239,7 +240,7 @@ export function AboutDialog() {
         </button>
       </DialogTrigger>
       <DialogContent
-        className="bg-black/95 backdrop-blur-xl border-cyan-500/20 shadow-[0_0_40px_rgba(0,200,255,0.08)] sm:max-w-2xl max-h-[80vh] flex flex-col gap-0 p-0"
+        className="bg-black/95 backdrop-blur-xl border-cyan-500/20 shadow-[0_0_40px_rgba(0,200,255,0.08)] sm:max-w-2xl max-h-[80vh] flex flex-col gap-0 p-0 overflow-hidden"
         showCloseButton
       >
         {/* Scanline overlay matching sidebar aesthetic */}
@@ -279,13 +280,17 @@ export function AboutDialog() {
           </TabsList>
 
           <TabsContent value="about" className="flex-1 min-h-0 mt-3 data-[state=inactive]:hidden">
-            <ScrollArea className="h-full max-h-[calc(80vh-140px)]">
-              <AboutTab />
+            <ScrollArea className="max-h-[calc(80vh-160px)]" style={{ height: 'calc(80vh - 160px)' }}>
+              <div className="pr-3">
+                <AboutTab />
+              </div>
             </ScrollArea>
           </TabsContent>
           <TabsContent value="methodology" className="flex-1 min-h-0 mt-3 data-[state=inactive]:hidden">
-            <ScrollArea className="h-full max-h-[calc(80vh-140px)]">
-              <MethodologyTab />
+            <ScrollArea className="max-h-[calc(80vh-160px)]" style={{ height: 'calc(80vh - 160px)' }}>
+              <div className="pr-3">
+                <MethodologyTab />
+              </div>
             </ScrollArea>
           </TabsContent>
         </Tabs>

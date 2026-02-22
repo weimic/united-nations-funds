@@ -105,6 +105,9 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
               Global Analysis
             </p>
           </div>
+          <div className="group-data-[collapsible=icon]:hidden shrink-0">
+            <AboutDialog />
+          </div>
         </div>
       </SidebarHeader>
 
@@ -216,10 +219,7 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
           <p className="text-[10px] font-mono text-cyan-400/30 tracking-widest uppercase">
             <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://fts.unocha.org/">OCHA FTS</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://www.acaps.org/en/thematics/all-topics/inform-severity-index">INFORM</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://data.humdata.org/">HDX</a>
           </p>
-          <div className="flex items-center gap-2">
-            <AboutDialog />
-            <ChatToggleButton isOpen={chatOpen} onClick={onChatToggle} />
-          </div>
+          <ChatToggleButton isOpen={chatOpen} onClick={onChatToggle} />
         </div>
       </SidebarFooter>
     </Sidebar>
