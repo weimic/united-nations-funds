@@ -13,9 +13,9 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 ## Current Product Capabilities
 - **Overview tab analytics** (formerly "Global" tab)
 	- Overlooked crises ranking (titled "Top 10 Overlooked Crises") with **Show all** drilldown. Substats: Severity, Funded %, Gap — all substat values in amber-400. Score bar is solid red (`bg-red-500`) on a lighter muted track (`bg-muted/30`).
-	- Absolute funding gap ranking (top 10 by default) with **Show all** drilldown. Chart legend order: Funded (on-appeal), Funded (off-appeal), Unfunded Gap. X-axis starts at "$0" (not "$0M"). Tooltip uses `separator=": "` (no space before colon) and correctly maps bar names from the Bar `name` prop.
+	- Absolute funding gap ranking (top 10 by default) with **Show all** drilldown. Chart legend order: Funded (on-appeal), Funded (off-appeal), Unfunded Gap. X-axis starts at "$0" (not "$0M"). Tooltip uses `separator=": "` (no space before colon), correctly maps bar names from the Bar `name` prop, and enforces top-to-bottom order: Funded (on-appeal), Funded (off-appeal), Unfunded Gap via `itemSorter`.
 	- Overlooked countries ranking (titled "Top 10 Overlooked Countries") with **Show all** drilldown. Substats: Severity, Funded %, Gap — all substat values in amber-400. Off-appeal substat removed.
-	- Clicking an overlooked crisis navigates to crisis detail with back-button returning to Overview tab (not Crises tab). Clicking an overlooked country navigates to country detail with back-button returning to Overview tab (not Countries tab). Uses `navigationSource` context state to track origin.
+	- Clicking an overlooked crisis navigates to crisis detail with back-button returning to Overview tab (not Crises tab). Clicking an overlooked country navigates to country detail with back-button returning to Overview tab (not Countries tab). Uses dual navigation sources: `navigationSource` for crisis detail back and `countryDetailSource` for country detail back.
 	- All three **Show all** buttons are underlined (`underline underline-offset-2`) for discoverability.
 	- Global humanitarian overview cards and funding progress (at bottom of page).
 - **Countries tab controls**
@@ -24,9 +24,10 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- Min/max filters for all of those metrics.
 	- Clicking a country in the list focuses the globe on it and highlights its borders.
 - **Country detail**
+	- Back button reads "Back" (not "Countries") and always navigates to the page the user came from — Overview tab, Crises tab (crisis detail), or Countries list — via `countryDetailSource`.
 	- Severity summary at top.
 	- Funding gap stacked bar + neglect index bar directly beneath severity.
-	- Active crises list per country (all INFORM crises, including multi-ISO expanded).
+	- Active crises list per country (all INFORM crises, including multi-ISO expanded). Clicking a crisis sets `navigationSource` to "countries" so back from crisis detail returns to the country detail.
 	- Plan-line funding breakdown (appeal breakdown) and CBPF cluster analysis.
 	- Crisis drivers listed at the bottom.
 - **Crisis detail**
@@ -34,7 +35,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- CBPF Funding bar chart (standalone, no cost-per-person overlay). X-axis labels rotate at −35° and truncate when dense to prevent overlap.
 	- Targeted vs Reached line chart (straight lines) showing targeted (green) and reached (red) people per cluster, displayed beneath the CBPF chart.
 	- Single country card styled like the Overlooked Countries cards (neglect index bar, severity/funded/gap stats). Heading reads "Country" (not "Country Rankings").
-	- Clicking the country card focuses globe and highlights that country's borders.
+	- Clicking the country card focuses globe, highlights that country's borders, and sets `countryDetailSource` to "crises" so back from country detail returns to the crisis detail.
 - **Crises tab**
 	- Category-based crisis browsing with per-category stats.
 - **Globe interaction**
@@ -43,7 +44,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- **Country hover detection**: hovering anywhere on a country's territory (not just spike) shows borders and tooltip. Countries without data display "No funding or crisis data" with no click action.
 	- **Selected country borders**: clicking a country (via sidebar or globe) persistently highlights its borders on the globe.
 	- **Hover tooltip**: left-aligned with dark background (`bg-black/90`), backdrop blur, and cyan border. Shows country name, severity, funding, and click prompt.
-	- Click-through from spike or country surface to country detail.
+	- Click-through from spike or country surface to country detail. Globe clicks set `countryDetailSource` to the current sidebar tab so back navigation returns the user to the tab they were on.
 	- **Globe controls** (bottom-right, stacked vertically): two labeled switch bars using consistent pill style with cyan color scheme.
 		- **View switch** (top): "View: Dots [toggle] Countries" — switches between dot-cloud and solid country-fill map styles.
 		- **Spikes switch** (bottom): "Spikes: Funding [toggle] Severity" — switches spike data between funding gap and severity modes. Uses cyan colors matching the View switch.
@@ -77,7 +78,8 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 - `spikeMode`: `"fundingGap" | "severity"` — controls what the spikes represent.
 - `spikeColorMode`: `"default" | "spectrum"` — controls spike coloring. Default uses mode-specific colors; spectrum uses yellow-to-red gradient based on magnitude.
 - `mapStyle`: `"dots" | "solid"` — controls globe visualization style.
-- `navigationSource`: `string | null` — tracks which tab initiated a detail navigation (e.g. `"overview"`). Used by CountriesTab and CrisesTab to route the back button to the originating tab.
+- `navigationSource`: `string | null` — tracks which tab initiated a crisis detail navigation (e.g. `"overview"`, `"countries"`). Used by CrisesTab to route the crisis detail back button to the originating tab.
+- `countryDetailSource`: `string | null` — tracks which tab initiated a country detail navigation (e.g. `"overview"`, `"crises"`). Used by CountriesTab to route the country detail back button to the originating tab. Both sources are cleared when the user manually switches tabs via the tab bar.
 
 ## AI / LLM Architecture
 - **RAG pipeline**: LangChain LCEL — Pinecone vector retrieval → system prompt injection → OpenRouter/Llama-3 primary with HuggingFace/Mistral-7B automatic fallback → `StringOutputParser`.
