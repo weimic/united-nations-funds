@@ -77,11 +77,14 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 
 ## AI / LLM Architecture
 - **RAG pipeline**: LangChain LCEL — Pinecone vector retrieval → system prompt injection → OpenRouter/Llama-3 primary with HuggingFace/Mistral-7B automatic fallback → `StringOutputParser`.
-- **JSON extraction hardening** (route `app/api/chat/route.ts`):
+- **Response extraction pipeline** (route `app/api/chat/route.ts`):
 	1. Strip leading/trailing ` ```json ``` ` code fences (LLMs commonly wrap output).
-	2. Find the outermost `{…}` bounding braces to isolate JSON even if the LLM adds preamble prose or trailing commentary.
-	3. `JSON.parse` the extracted slice; on failure fall back to displaying the stripped text as a plain message.
-	4. Defensive post-parse normalization: ensure `message` is a non-empty string (also checks for an `text` alias), coerce `citations` to `[]` if absent or malformed, and drop `focusIso3` if it is not exactly a 3-character string.
+	2. **Plain-text key-value detection** (`isPlainTextKeyValueFormat`): if the stripped text starts with `Message:` and does *not* start with `{`, route to `extractPlainTextResponse` immediately — bypassing the brace-based JSON extraction that would otherwise mistake `{` inside the Citations array for a JSON envelope.
+	3. `extractPlainTextResponse` uses section-based parsing: `matchAll` locates every known key (`Message`, `FocusIso3`, `Citations`) at the start of a line, then slices between them. Multi-line / multi-paragraph messages are captured intact (fixes the earlier `$`-with-`m`-flag regex that truncated at the first line-end). Citations JSON is extracted from within the `[…]` brackets and parsed separately.
+	4. If not plain-text: find the outermost `{…}` bounding braces to isolate JSON even if the LLM adds preamble prose or trailing commentary.
+	5. `JSON.parse` the extracted slice; on failure fall back to `extractFallbackResponse` which tries boundary-based JSON key extraction, then plain-text parsing, before returning raw text.
+	6. Defensive post-parse normalization: ensure `message` is a non-empty string (also checks for a `text` alias), coerce `citations` to `[]` if absent or malformed, and drop `focusIso3` if it is not exactly a 3-character string.
+	7. `stripJsonEnvelope` as a final safeguard: if the message field itself contains a JSON envelope or plain-text keys, extract just the inner message text.
 - **Input guards**: history capped at 20 messages; individual messages capped at 2,000 characters to prevent token-exhaustion.
 - **`ChatResponse` type** (`lib/chat-types.ts`): `{ message: string; focusIso3?: string; citations: ChatCitation[] }`.
 

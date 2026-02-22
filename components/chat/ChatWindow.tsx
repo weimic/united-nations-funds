@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useRef, useEffect } from "react";
+import { useState, useRef, useEffect, useCallback } from "react";
 import { X, Send, Trash2, AlertTriangle, Bot } from "lucide-react";
 import { useAppContext } from "@/lib/app-context";
 import { useChatState } from "@/hooks/use-chat-state";
@@ -56,9 +56,15 @@ export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProp
     setInput("");
     const response = await sendMessage(query);
     if (response?.focusIso3) {
+      // Always focus the globe on the primary country mentioned
       setGlobeFocusIso3(response.focusIso3);
-      setSelectedCountryIso3(response.focusIso3);
-      setSidebarTab("countries");
+      // Only switch to countries tab / select the country if there are no crisis
+      // citations — otherwise the crisis citation chips will route the sidebar.
+      const hasCrisisCitations = response.citations?.some((c) => c.type === "crisis");
+      if (!hasCrisisCitations) {
+        setSelectedCountryIso3(response.focusIso3);
+        setSidebarTab("countries");
+      }
     }
   };
 
@@ -67,10 +73,44 @@ export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProp
     const response = await sendMessage(question);
     if (response?.focusIso3) {
       setGlobeFocusIso3(response.focusIso3);
-      setSelectedCountryIso3(response.focusIso3);
-      setSidebarTab("countries");
+      const hasCrisisCitations = response.citations?.some((c) => c.type === "crisis");
+      if (!hasCrisisCitations) {
+        setSelectedCountryIso3(response.focusIso3);
+        setSidebarTab("countries");
+      }
     }
   };
+
+  /** Resolve a crisis citation against the actual dataset. */
+  const resolveCrisis = useCallback(
+    (citation: ChatCitation) => {
+      const labelLower = (citation.label || "").toLowerCase();
+      const crisisIdLower = (citation.crisisId || "").toLowerCase();
+      return data.crises.find(
+        (c) =>
+          c.crisisId === citation.crisisId ||
+          c.crisisName.toLowerCase() === crisisIdLower ||
+          c.crisisName.toLowerCase() === labelLower ||
+          c.crisisName.toLowerCase().includes(crisisIdLower) ||
+          c.crisisName.toLowerCase().includes(labelLower) ||
+          crisisIdLower.includes(c.crisisName.toLowerCase())
+      );
+    },
+    [data.crises]
+  );
+
+  /** Only keep citations that actually navigate somewhere on click. */
+  const filterActionableCitations = useCallback(
+    (citations: ChatCitation[] | undefined): ChatCitation[] => {
+      if (!citations?.length) return [];
+      return citations.filter((c) => {
+        if (c.type === "country") return !!c.iso3;
+        if (c.type === "crisis") return !!resolveCrisis(c);
+        return false;
+      });
+    },
+    [resolveCrisis]
+  );
 
   const handleCitationClick = (citation: ChatCitation) => {
     if (citation.type === "country" && citation.iso3) {
@@ -78,12 +118,7 @@ export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProp
       setSelectedCountryIso3(citation.iso3);
       setSidebarTab("countries");
     } else if (citation.type === "crisis") {
-      // Find crisis by name or ID in the data
-      const crisis = data.crises.find(
-        (c) =>
-          c.crisisId === citation.crisisId ||
-          c.crisisName.toLowerCase().includes((citation.label || "").toLowerCase())
-      );
+      const crisis = resolveCrisis(citation);
       if (crisis) {
         setActiveCrisis(crisis);
         setSidebarTab("crises");
@@ -136,7 +171,10 @@ export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProp
           {messages.map((msg) => (
             <ChatMessageBubble
               key={msg.id}
-              message={msg}
+              message={{
+                ...msg,
+                citations: filterActionableCitations(msg.citations),
+              }}
               onCitationClick={handleCitationClick}
             />
           ))}
@@ -260,7 +298,10 @@ export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProp
           {messages.map((msg) => (
             <ChatMessageBubble
               key={msg.id}
-              message={msg}
+              message={{
+                ...msg,
+                citations: filterActionableCitations(msg.citations),
+              }}
               onCitationClick={handleCitationClick}
             />
           ))}

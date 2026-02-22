@@ -155,7 +155,11 @@ INSTRUCTIONS:
 - Answer the user's question based on the context above.
 - When mentioning a specific country, include its ISO3 code in parentheses, e.g. "Sudan (SDN)".
 - If the question is primarily about one country, set "focusIso3" to that country's ISO3 code.
-- In your "citations" array, include entities you referenced. Use type "country" with the ISO3 code, or type "crisis" with the crisis name.
+- In your "citations" array, include every country and crisis you directly referenced:
+  - For countries: type="country", iso3="ISO3_CODE" (3 uppercase letters), crisisId="", label="Country Name"
+  - For crises: type="crisis", iso3="", crisisId="<exact crisis name from context>", label="<exact crisis name from context>"
+  - Use the EXACT crisis name as it appears in the retrieved context for crisisId and label.
+- Do NOT include inline citation markers like [1], [2] in the "message" field. All citations belong only in the "citations" array.
 - If the data is insufficient to answer, say so clearly.
 - Use markdown formatting for readability (bold, lists, tables where appropriate).
 
@@ -164,7 +168,8 @@ You MUST respond with valid JSON matching this exact schema:
   "message": "Your markdown-formatted response text.",
   "focusIso3": "ISO3" or null,
   "citations": [
-    { "type": "country" or "crisis", "iso3": "ISO3_CODE", "crisisId": "optional_crisis_id", "label": "Display Name" }
+    { "type": "country", "iso3": "ISO3_CODE", "crisisId": "", "label": "Country Name" },
+    { "type": "crisis", "iso3": "", "crisisId": "Exact Crisis Name", "label": "Exact Crisis Name" }
   ]
 }
 
@@ -226,6 +231,233 @@ function getRagChain(): RunnableSequence<{ messages: MessageInput[] }, string> {
   return _ragChain;
 }
 
+// ── Response sanitisation helpers ──────────────────────────────────────────────
+
+/**
+ * Manually unescape JSON string escape sequences for the case where
+ * JSON.parse fails on the captured regex group (e.g. unbalanced quotes).
+ * Handles: \n \t \r \" \\ \/ \b \f
+ */
+function unescapeJsonString(s: string): string {
+  return s
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\r/g, "\r")
+    .replace(/\\b/g, "\b")
+    .replace(/\\f/g, "\f")
+    .replace(/\\\//g, "/")
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+/**
+ * Detect and convert literal two-char escape sequences (\n, \t, \r) that
+ * slipped through as raw text rather than being interpreted by JSON.parse.
+ * Only applies when the string actually contains these sequences — avoids
+ * touching content that is already correctly formatted.
+ */
+function normalizeLiteralEscapes(s: string): string {
+  if (!s.includes("\\n") && !s.includes("\\t") && !s.includes("\\r")) {
+    return s;
+  }
+  return unescapeJsonString(s);
+}
+
+/**
+ * Try to rescue citations from the raw text via regex when JSON.parse failed.
+ */
+function extractFallbackCitations(text: string): ChatResponse["citations"] {
+  const citMatch = text.match(/"citations"\s*:\s*(\[[\s\S]*\])/);
+  if (!citMatch) return [];
+  try {
+    const arr = JSON.parse(citMatch[1]);
+    if (Array.isArray(arr)) return arr;
+  } catch {
+    // citations array wasn't valid JSON either
+  }
+  return [];
+}
+
+/**
+ * Boundary-based message extraction: find the raw value between `"message":`
+ * and the next known JSON key (`"focusIso3"`, `"citations"`) or closing `}`.
+ *
+ * This handles three LLM failure modes that break JSON.parse:
+ *   1. Properly quoted value with unescaped internal quotes (truncates regex)
+ *   2. Completely unquoted value (no quotes at all)
+ *   3. Malformed escaping (e.g. single-backslash before non-escape chars)
+ *
+ * Once the raw slice is isolated, if it's wrapped in quotes we attempt
+ * JSON.parse for proper unescaping, then fall back to manual unescaping.
+ */
+function extractMessageByBoundary(text: string): string | null {
+  const keyMatch = text.match(/"message"\s*:\s*/);
+  if (!keyMatch || keyMatch.index === undefined) return null;
+
+  const valueStart = keyMatch.index + keyMatch[0].length;
+  const remainder = text.slice(valueStart);
+
+  // Find the boundary: ,"focusIso3" or ,"citations" (with flexible whitespace)
+  const boundaryMatch = remainder.match(/,\s*"(?:focusIso3|citations)"\s*:/);
+  let rawValue: string;
+  if (boundaryMatch && boundaryMatch.index !== undefined) {
+    rawValue = remainder.slice(0, boundaryMatch.index);
+  } else {
+    // No next key found — take everything up to the last closing brace
+    const closingBrace = remainder.lastIndexOf("}");
+    rawValue = closingBrace !== -1 ? remainder.slice(0, closingBrace) : remainder;
+  }
+
+  rawValue = rawValue.trim();
+  // Strip trailing comma left over from the JSON structure
+  rawValue = rawValue.replace(/,\s*$/, "");
+
+  // If the value is wrapped in quotes, try JSON string parse for proper unescaping
+  if (rawValue.startsWith('"')) {
+    // Find the actual closing quote (the last `"` in the raw value)
+    const lastQuote = rawValue.lastIndexOf('"');
+    if (lastQuote > 0) {
+      const jsonCandidate = rawValue.slice(0, lastQuote + 1);
+      try {
+        return JSON.parse(jsonCandidate) as string;
+      } catch {
+        // Unescaped internal quotes — strip outer quotes and manually unescape
+        return unescapeJsonString(rawValue.slice(1, lastQuote));
+      }
+    }
+  }
+
+  // Unquoted value — use as-is
+  return rawValue;
+}
+
+/**
+ * Quick heuristic: does the text look like the plain-text key-value format
+ * ("Message: ...\nFocusIso3: ...\nCitations: [...]") rather than a JSON
+ * object?  Used to short-circuit the firstBrace/lastBrace extraction that
+ * otherwise mistakes the `{` inside the Citations array for a JSON envelope.
+ */
+function isPlainTextKeyValueFormat(text: string): boolean {
+  return /^Message\s*:/im.test(text) && !text.trimStart().startsWith("{");
+}
+
+/**
+ * Parse plain-text key-value format that some LLMs produce instead of JSON.
+ *
+ * Uses section-based parsing — locating every known top-level key at the
+ * start of a line and slicing between them — so multi-line message bodies
+ * are captured correctly.  The previous regex approach with `$` in a
+ * `m`-flag lookahead would terminate the capture at the first line-end,
+ * truncating multi-paragraph messages.
+ *
+ * Recognised keys (case-insensitive): Message, FocusIso3, Citations.
+ *
+ *   Message: Venezuela is trapped in a profound...
+ *   Multi-line paragraph content is preserved.
+ *
+ *   FocusIso3: VEN
+ *
+ *   Citations: [ { "type": "country", ... } ]
+ */
+function extractPlainTextResponse(text: string): ChatResponse | null {
+  const keyPattern = /^(Message|FocusIso3|Citations)\s*:\s*/gim;
+  const keys: { key: string; valueStart: number; index: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = keyPattern.exec(text)) !== null) {
+    keys.push({ key: m[1].toLowerCase(), valueStart: m.index + m[0].length, index: m.index });
+  }
+
+  if (!keys.some((k) => k.key === "message")) return null;
+
+  // Build key → raw-value map (each value runs from after the colon to the
+  // start of the next key, or end-of-string for the last key).
+  const sections: Record<string, string> = {};
+  for (let i = 0; i < keys.length; i++) {
+    const valueEnd = i + 1 < keys.length ? keys[i + 1].index : text.length;
+    sections[keys[i].key] = text.slice(keys[i].valueStart, valueEnd).trim();
+  }
+
+  const message = sections.message;
+  if (!message) return null;
+
+  let focusIso3: string | undefined;
+  if (sections.focusiso3) {
+    const fm = sections.focusiso3.match(/^([A-Z]{3})/i);
+    if (fm) focusIso3 = fm[1].toUpperCase();
+  }
+
+  let citations: ChatResponse["citations"] = [];
+  if (sections.citations) {
+    const bracketMatch = sections.citations.match(/\[[\s\S]*\]/);
+    if (bracketMatch) {
+      try {
+        const arr = JSON.parse(bracketMatch[0]);
+        if (Array.isArray(arr)) citations = arr;
+      } catch {
+        // Citations array wasn't valid JSON
+      }
+    }
+  }
+
+  return { message, focusIso3, citations };
+}
+
+/**
+ * When JSON.parse fails on the full response, attempt to rescue the "message"
+ * and "focusIso3" values via regex so we never surface the raw JSON envelope
+ * to the user, and country focus is preserved even in the fallback path.
+ */
+function extractFallbackResponse(text: string): ChatResponse {
+  // Strategy 1: JSON-shaped — quoted or unquoted "message" key with boundary extraction
+  let focusIso3: string | undefined;
+  const focusMatch = text.match(/"focusIso3"\s*:\s*"([A-Z]{3})"/i);
+  if (focusMatch) focusIso3 = focusMatch[1].toUpperCase();
+
+  const message = extractMessageByBoundary(text);
+  if (message) {
+    return { message, citations: extractFallbackCitations(text), focusIso3 };
+  }
+
+  // Strategy 2: Plain-text key-value format (Message: ..., FocusIso3: ..., Citations: ...)
+  const plainText = extractPlainTextResponse(text);
+  if (plainText) return plainText;
+
+  // No recognizable format — return text as-is
+  return { message: text, citations: [] };
+}
+
+/**
+ * Final safeguard: if the message string still looks like it contains the raw
+ * JSON response envelope (`{ "message": "...", ... }`), extract just the inner
+ * message value.  This prevents the user from ever seeing protocol-level JSON.
+ * Also normalises any literal \n sequences that survived the JSON parse path.
+ */
+function stripJsonEnvelope(message: string): string {
+  const trimmed = message.trim();
+
+  // JSON object envelope
+  if (trimmed.startsWith("{") && trimmed.includes('"message"')) {
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof obj.message === "string" && obj.message) {
+        return obj.message;
+      }
+    } catch {
+      const extracted = extractMessageByBoundary(trimmed);
+      if (extracted) return extracted;
+    }
+  }
+
+  // Plain-text key-value format (Message: ... FocusIso3: ... Citations: ...)
+  if (/^Message\s*:/im.test(trimmed)) {
+    const pt = extractPlainTextResponse(trimmed);
+    if (pt) return pt.message;
+  }
+
+  return normalizeLiteralEscapes(message);
+}
+
 // ── Route Handler ──────────────────────────────────────────────────────────────
 
 export async function POST(req: NextRequest) {
@@ -257,33 +489,44 @@ export async function POST(req: NextRequest) {
     // Invoke the LCEL chain — returns the raw LLM text string
     const responseText = await getRagChain().invoke({ messages });
 
-    // ── Robust JSON extraction ─────────────────────────────────────────────────
-    // LLMs frequently:
-    //   • Wrap the JSON in ```json ... ``` code fences
-    //   • Prepend a sentence before the opening brace
-    //   • Append extra commentary after the closing brace
-    // Strategy: strip fences first, then isolate the outermost { … } block.
+    // ── Robust response extraction ──────────────────────────────────────────────
+    // LLMs answer in one of two shapes:
+    //   A. A JSON object (possibly wrapped in ```json fences / preamble prose).
+    //   B. Plain-text key-value pairs:  Message: …  FocusIso3: …  Citations: […]
+    //
+    // Shape B must be detected *before* the brace-based JSON extraction,
+    // because the `{` inside the Citations array would otherwise be mistaken
+    // for the opening brace of a JSON envelope, producing a garbage slice.
 
     const stripped = responseText
       .replace(/^```(?:json)?\s*/im, "")
       .replace(/\s*```\s*$/im, "")
       .trim();
 
-    // Find the outermost JSON object boundaries
-    const firstBrace = stripped.indexOf("{");
-    const lastBrace = stripped.lastIndexOf("}");
-    const jsonStr =
-      firstBrace !== -1 && lastBrace > firstBrace
-        ? stripped.slice(firstBrace, lastBrace + 1)
-        : stripped;
-
     let parsed: ChatResponse;
-    try {
-      parsed = JSON.parse(jsonStr) as ChatResponse;
-    } catch {
-      // Graceful fallback: surface the cleaned text as the message so the UI
-      // still renders something useful rather than a raw JSON error.
-      parsed = { message: stripped || responseText, citations: [] };
+
+    // Strategy 1: Plain-text key-value format — must be tried first.
+    const plainTextResult = isPlainTextKeyValueFormat(stripped)
+      ? extractPlainTextResponse(stripped)
+      : null;
+
+    if (plainTextResult) {
+      parsed = plainTextResult;
+    } else {
+      // Strategy 2: JSON object extraction (outermost { … } block)
+      const firstBrace = stripped.indexOf("{");
+      const lastBrace = stripped.lastIndexOf("}");
+      const jsonStr =
+        firstBrace !== -1 && lastBrace > firstBrace
+          ? stripped.slice(firstBrace, lastBrace + 1)
+          : stripped;
+
+      try {
+        parsed = JSON.parse(jsonStr) as ChatResponse;
+      } catch {
+        // JSON.parse failed — try boundary / regex rescue before giving up.
+        parsed = extractFallbackResponse(stripped || responseText);
+      }
     }
 
     // Defensive normalisation — ensure required fields are present and typed
@@ -304,6 +547,11 @@ export async function POST(req: NextRequest) {
     ) {
       parsed.focusIso3 = undefined;
     }
+
+    // Final safeguard: if `message` still looks like a raw JSON object (i.e. it
+    // contains the wrapper schema keys), extract just the inner message value so
+    // the user never sees the raw protocol envelope.
+    parsed.message = stripJsonEnvelope(parsed.message);
 
     return NextResponse.json(parsed);
   } catch (err: unknown) {

@@ -57,10 +57,10 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
       </SidebarHeader>
 
       <SidebarContent className="relative z-10 p-0 overflow-hidden flex flex-col">
-        {/* Stats / tabs — takes all available space, or top 55% when chat is open */}
+        {/* Stats / tabs — takes all available space, or top 50% when chat is open */}
         <div
           className="group-data-[collapsible=icon]:hidden flex flex-col min-h-0 px-2 pb-2 overflow-hidden"
-          style={{ flex: chatOpen ? "0 0 55%" : "1 1 0%" }}
+          style={{ flex: chatOpen ? "0 0 50%" : "1 1 0%" }}
         >
           <SpikeSelector />
           <Tabs
@@ -115,9 +115,9 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
           </Tabs>
         </div>
 
-        {/* Chat panel — bottom 45% of sidebar when open */}
+        {/* Chat panel — bottom 50% of sidebar when open */}
         {chatOpen && (
-          <div className="group-data-[collapsible=icon]:hidden flex flex-col border-t border-cyan-500/20 overflow-hidden" style={{ flex: "0 0 45%" }}>
+          <div className="group-data-[collapsible=icon]:hidden flex flex-col border-t border-cyan-500/20 overflow-hidden" style={{ flex: "0 0 50%" }}>
             <ChatWindow isOpen={chatOpen} onClose={onChatToggle} embedded />
           </div>
         )}

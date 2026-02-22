@@ -90,8 +90,88 @@ interface ChatMessageBubbleProps {
   onCitationClick: (citation: ChatCitation) => void;
 }
 
+/**
+ * Last-resort safeguard: strip a JSON response envelope from content that
+ * somehow reached the component without being cleaned upstream.
+ * Also normalises any surviving literal \n two-char sequences → real newlines.
+ */
+function extractMessageByBoundary(text: string): string | null {
+  const keyMatch = text.match(/"message"\s*:\s*/);
+  if (!keyMatch || keyMatch.index === undefined) return null;
+
+  const valueStart = keyMatch.index + keyMatch[0].length;
+  const remainder = text.slice(valueStart);
+
+  const boundaryMatch = remainder.match(/,\s*"(?:focusIso3|citations)"\s*:/);
+  let rawValue: string;
+  if (boundaryMatch && boundaryMatch.index !== undefined) {
+    rawValue = remainder.slice(0, boundaryMatch.index);
+  } else {
+    const closingBrace = remainder.lastIndexOf("}");
+    rawValue = closingBrace !== -1 ? remainder.slice(0, closingBrace) : remainder;
+  }
+
+  rawValue = rawValue.trim().replace(/,\s*$/, "");
+
+  if (rawValue.startsWith('"')) {
+    const lastQuote = rawValue.lastIndexOf('"');
+    if (lastQuote > 0) {
+      const jsonCandidate = rawValue.slice(0, lastQuote + 1);
+      try {
+        return JSON.parse(jsonCandidate) as string;
+      } catch {
+        return rawValue.slice(1, lastQuote)
+          .replace(/\\n/g, "\n")
+          .replace(/\\t/g, "\t")
+          .replace(/\\r/g, "\r")
+          .replace(/\\"/g, '"')
+          .replace(/\\\\/g, "\\");
+      }
+    }
+  }
+  return rawValue;
+}
+
+function extractPlainTextMessage(text: string): string | null {
+  const msgMatch = text.match(/^Message\s*:\s*([\s\S]*?)(?=\n\s*(?:FocusIso3|Citations)\s*:|$)/im);
+  return msgMatch?.[1]?.trim() || null;
+}
+
+function safeBubbleContent(content: string): string {
+  const trimmed = content.trim();
+  let result = content;
+
+  if (trimmed.startsWith("{") && trimmed.includes('"message"')) {
+    // JSON object envelope
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof obj.message === "string" && obj.message) {
+        result = obj.message;
+      }
+    } catch {
+      const extracted = extractMessageByBoundary(trimmed);
+      if (extracted) result = extracted;
+    }
+  } else if (/^Message\s*:/im.test(trimmed)) {
+    // Plain-text key-value format (Message: ... FocusIso3: ... Citations: ...)
+    const extracted = extractPlainTextMessage(trimmed);
+    if (extracted) result = extracted;
+  }
+
+  // Convert any literal \n sequences that survived all upstream sanitisation
+  if (result.includes("\\n") || result.includes("\\t") || result.includes("\\r")) {
+    result = result
+      .replace(/\\n/g, "\n")
+      .replace(/\\t/g, "\t")
+      .replace(/\\r/g, "\r")
+      .replace(/\\"/g, '"');
+  }
+  return result;
+}
+
 export function ChatMessageBubble({ message, onCitationClick }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
+  const displayContent = isUser ? message.content : safeBubbleContent(message.content);
 
   return (
     <div className={cn("flex", isUser ? "justify-end" : "justify-start")}>
@@ -104,11 +184,11 @@ export function ChatMessageBubble({ message, onCitationClick }: ChatMessageBubbl
         )}
       >
         {isUser ? (
-          <p className="text-sm">{message.content}</p>
+          <p className="text-sm">{displayContent}</p>
         ) : (
           <div className="prose-invert">
             <ReactMarkdown remarkPlugins={[remarkGfm]} components={mdComponents}>
-              {message.content}
+              {displayContent}
             </ReactMarkdown>
           </div>
         )}
