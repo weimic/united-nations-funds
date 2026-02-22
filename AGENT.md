@@ -29,12 +29,13 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- Severity summary at top.
 	- Funding gap stacked bar + neglect index bar directly beneath severity.
 	- Active crises list per country (all INFORM crises, including multi-ISO expanded). Clicking a crisis sets `navigationSource` to "countries" so back from crisis detail returns to the country detail.
-	- Plan-line funding breakdown (appeal breakdown) and CBPF cluster analysis.
+	- Plan-line funding breakdown (appeal breakdown) and CBPF cluster dual-chart analysis: CBPF Funding bar chart + Targeted vs Reached line chart (same layout as crisis detail charts). Both charts share a synchronized vertical white dashed reference line on hover — hovering a data point in either chart highlights the same cluster in both. CBPF Y-axis and tooltip show full dollar amounts (no K abbreviation); values ≥$1M display as "$X.XM". Targeted vs Reached line chart uses an expanded right margin to prevent rightmost label clipping.
 	- Crisis drivers listed at the bottom.
 - **Crisis detail**
 	- Aggregate stats (requirements, funded, CBPF, gap).
-	- CBPF Funding bar chart (standalone, no cost-per-person overlay). X-axis labels are horizontal and wrap to a second line when long; if the second line still exceeds the character budget it is truncated with "…". Hovering a bar brightens its fill instead of showing a white cursor rectangle.
-	- Targeted vs Reached line chart (straight lines) showing targeted (green) and reached (red) people per cluster, displayed beneath the CBPF chart. Same horizontal wrapping tick style as the CBPF chart.
+	- CBPF Funding bar chart (standalone, no cost-per-person overlay). X-axis labels are horizontal and wrap to a second line when long; if the second line still exceeds the character budget it is truncated with "…". Hovering a bar brightens its fill instead of showing a white cursor rectangle. Y-axis and tooltip show full dollar amounts (no K abbreviation); values ≥$1M display as "$X.XM".
+	- Targeted vs Reached line chart (straight lines) showing targeted (green) and reached (red) people per cluster, displayed beneath the CBPF chart. Same horizontal wrapping tick style as the CBPF chart. Uses an expanded right margin (`right: 36`) to prevent rightmost data-point label from being clipped.
+	- Both charts share a synchronized vertical white dashed reference line (`ReferenceLine`) — hovering a data point in either chart highlights the same cluster in both via shared `activeIndex` state. The `cursor` prop is set to `false` on both `Tooltip` components so the native Recharts cursor is suppressed in favor of the explicit `ReferenceLine`.
 	- All chart tooltips use `labelFormatter` to show the full cluster name (never truncated). Tooltip label text wraps to a second line if needed (`whiteSpace: normal`, `maxWidth: 240px`).
 	- Country cards styled identically to the Underlooked Countries cards in the Overview tab: rank number, solid red neglect-index bar on `bg-muted/30` track, full stat row (Severity, Funded %, Gap, Off-appeal %). Heading reads "Country".
 	- Clicking a country card focuses globe and highlights that country's borders.
@@ -57,14 +58,14 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- **Spike color mode** (context state only, no UI toggle): `spikeColorMode` still exists in context for programmatic use; spectrum mode colors each spike yellow-to-red by magnitude. Spike material uses `MeshBasicMaterial` with white base color so instance colors render correctly.
 	- **Map style: solid fill**: severity-based colors for crisis countries, base blue for data countries without severity, and white for neutral countries with no data. Ocean color is preserved.
 	- **Solid country map**: aligned to match dot map via −π/2 Y-axis rotation on the texture sphere. Rendered at 8192×4096 resolution with anisotropic filtering (16×), mipmap generation, subtle country border strokes, and 128-segment sphere geometry for crisp rendering.
-- **About / Methodology dialog** (`AboutDialog`, triggered from `AppSidebar` footer)
-	- Circular Info (ℹ) button in the sidebar footer, styled identically to the chat toggle button (black/80, cyan border, glow shadow).
+- **About / Methodology dialog** (`AboutDialog`, triggered from `AppSidebar` header)
+	- Circular Info (ℹ) button in the sidebar header, positioned inline with the "UN Crisis Monitor" title (right-aligned). Styled identically to the chat toggle button (black/80, cyan border, glow shadow).
 	- Opens a two-tab dialog:
 		- **About tab**: project purpose, data sources (FTS, INFORM, CBPF, crisis details), key capabilities summary, and important caveats (on-appeal vs off-appeal behavior, crisis overlap, CBPF 0% reach interpretation).
 		- **Methodology tab**: Neglect Index formula with term-by-term breakdown, on-appeal vs off-appeal statistical rationale (Spearman correlation figures), percentile-based anomaly detection methodology with severity thresholds (P5/P10/P90/P95), CBPF delivery rate explanation, and data processing notes.
-	- Dialog has scanline overlay matching sidebar aesthetic, cyan-tinted styling, and scrollable content via `ScrollArea`.
+	- Dialog has scanline overlay matching sidebar aesthetic, cyan-tinted styling. Content is scrollable via `ScrollArea` with `max-h-[calc(80vh-160px)]` and `overflow-hidden` on the tab content containers. Close (X) button uses `z-50` to ensure it stays clickable above the scanline overlay.
 - **AI chat panel** (`ChatWindow`, `ChatToggleButton`, embedded in `AppSidebar`)
-	- Triggered by a circular Bot-icon button in the sidebar footer. The footer uses a `justify-between` flex layout: data-source links left-aligned, Info (About dialog) and Bot (chat toggle) buttons right-aligned.
+	- Triggered by a circular Bot-icon button in the sidebar footer. The footer uses a `justify-between` flex layout: data-source links left-aligned, Bot (chat toggle) button right-aligned.
 	- When open, the sidebar splits: top 55% shows the normal stats/tabs, bottom 45% shows the chat panel. Both sections scroll independently — users can read crisis data while chatting.
 	- `ChatWindow` has an `embedded` prop: when true it renders as an inline flex column (no fixed overlay, no z-index competition); when false it renders as the classic full-height slide-in overlay (preserved for potential standalone use).
 	- Scroll is implemented with a plain `<div ref={scrollRef} className="overflow-y-auto">` so `scrollTop` manipulation works directly (replaces `ScrollArea` which wrapped the viewport, making direct `scrollTop` writes ineffective).
@@ -119,6 +120,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 - **Spectrum legend** (was top-left of globe) — removed along with the spectrum toggle UI.
 - **Chat overlay panel** (was `fixed top-0 right-0 bottom-0` full-height slide-in) — replaced by inline embedded split-panel inside the sidebar.
 - **Citation chips** (were clickable `_CitationChip` buttons in `ChatMessageBubble`) — removed from pipeline and UI. System prompt no longer requests citations; `parsed.citations` is always `[]`. All extraction helpers and `_CitationChip` component are preserved (prefixed `_`) for future re-enablement.
+- **Combined CBPF cluster chart** (was `ClusterChart` with `ComposedChart` — single chart showing bars + cost-per-person lines on dual Y-axes in country detail) — replaced by dual-chart layout (CBPF Funding bar + Targeted vs Reached line) matching the crisis detail pattern, with synchronized vertical hover reference line.
 
 ## Near-Term Engineering Priorities
 - Add automated regression tests for key aggregations (especially crisis-country joins and ranking outputs).

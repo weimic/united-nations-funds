@@ -95,13 +95,16 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
           <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-red-600 to-red-800 shadow-[0_0_12px_rgba(220,40,40,0.4)]">
             <Globe2 className="h-4 w-4 text-white" />
           </div>
-          <div className="group-data-[collapsible=icon]:hidden">
+          <div className="flex-1 min-w-0 group-data-[collapsible=icon]:hidden">
             <h1 className="text-sm font-bold tracking-tight font-mono text-cyan-100">
               UN Crisis Monitor
             </h1>
             <p className="text-[10px] font-mono tracking-widest text-cyan-400/50 uppercase">
               Global Analysis
             </p>
+          </div>
+          <div className="group-data-[collapsible=icon]:hidden shrink-0">
+            <AboutDialog />
           </div>
         </div>
       </SidebarHeader>
@@ -214,10 +217,7 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
           <p className="text-[10px] font-mono text-cyan-400/30 tracking-widest uppercase">
             <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://fts.unocha.org/">OCHA FTS</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://www.acaps.org/en/thematics/all-topics/inform-severity-index">INFORM</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://data.humdata.org/">HDX</a>
           </p>
-          <div className="flex items-center gap-2">
-            <AboutDialog />
-            <ChatToggleButton isOpen={chatOpen} onClick={onChatToggle} />
-          </div>
+          <ChatToggleButton isOpen={chatOpen} onClick={onChatToggle} />
         </div>
       </SidebarFooter>
     </Sidebar>
