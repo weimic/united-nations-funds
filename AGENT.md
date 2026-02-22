@@ -57,8 +57,14 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- **Spike color mode** (context state only, no UI toggle): `spikeColorMode` still exists in context for programmatic use; spectrum mode colors each spike yellow-to-red by magnitude. Spike material uses `MeshBasicMaterial` with white base color so instance colors render correctly.
 	- **Map style: solid fill**: severity-based colors for crisis countries, base blue for data countries without severity, and white for neutral countries with no data. Ocean color is preserved.
 	- **Solid country map**: aligned to match dot map via −π/2 Y-axis rotation on the texture sphere. Rendered at 8192×4096 resolution with anisotropic filtering (16×), mipmap generation, subtle country border strokes, and 128-segment sphere geometry for crisp rendering.
+- **About / Methodology dialog** (`AboutDialog`, triggered from `AppSidebar` footer)
+	- Circular Info (ℹ) button in the sidebar footer, styled identically to the chat toggle button (black/80, cyan border, glow shadow).
+	- Opens a two-tab dialog:
+		- **About tab**: project purpose, data sources (FTS, INFORM, CBPF, crisis details), key capabilities summary, and important caveats (on-appeal vs off-appeal behavior, crisis overlap, CBPF 0% reach interpretation).
+		- **Methodology tab**: Neglect Index formula with term-by-term breakdown, on-appeal vs off-appeal statistical rationale (Spearman correlation figures), percentile-based anomaly detection methodology with severity thresholds (P5/P10/P90/P95), CBPF delivery rate explanation, and data processing notes.
+	- Dialog has scanline overlay matching sidebar aesthetic, cyan-tinted styling, and scrollable content via `ScrollArea`.
 - **AI chat panel** (`ChatWindow`, `ChatToggleButton`, embedded in `AppSidebar`)
-	- Triggered by a circular Bot-icon button in the sidebar footer (bottom-right of the right panel).
+	- Triggered by a circular Bot-icon button in the sidebar footer. The footer uses a `justify-between` flex layout: data-source links left-aligned, Info (About dialog) and Bot (chat toggle) buttons right-aligned.
 	- When open, the sidebar splits: top 55% shows the normal stats/tabs, bottom 45% shows the chat panel. Both sections scroll independently — users can read crisis data while chatting.
 	- `ChatWindow` has an `embedded` prop: when true it renders as an inline flex column (no fixed overlay, no z-index competition); when false it renders as the classic full-height slide-in overlay (preserved for potential standalone use).
 	- Scroll is implemented with a plain `<div ref={scrollRef} className="overflow-y-auto">` so `scrollTop` manipulation works directly (replaces `ScrollArea` which wrapped the viewport, making direct `scrollTop` writes ineffective).
