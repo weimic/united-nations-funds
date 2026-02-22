@@ -16,6 +16,7 @@ import { CrisesTab } from "./CrisesTab";
 import { CountriesTab } from "./CountriesTab";
 import { ChatWindow } from "@/components/chat/ChatWindow";
 import { ChatToggleButton } from "@/components/chat/ChatToggleButton";
+import { AboutDialog } from "./AboutDialog";
 
 interface AppSidebarProps {
   chatOpen: boolean;
@@ -209,9 +210,15 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
         </div>
       </SidebarContent>
       <SidebarFooter className="relative z-10 border-t border-cyan-500/15 p-3 group-data-[collapsible=icon]:hidden shrink-0">
-        <p className="text-[10px] font-mono text-cyan-400/30 text-center tracking-widest uppercase">
-          <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://fts.unocha.org/">OCHA FTS</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://www.acaps.org/en/thematics/all-topics/inform-severity-index">INFORM</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://data.humdata.org/">HDX</a>
-        </p>
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-mono text-cyan-400/30 tracking-widest uppercase">
+            <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://fts.unocha.org/">OCHA FTS</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://www.acaps.org/en/thematics/all-topics/inform-severity-index">INFORM</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://data.humdata.org/">HDX</a>
+          </p>
+          <div className="flex items-center gap-2">
+            <AboutDialog />
+            <ChatToggleButton isOpen={chatOpen} onClick={onChatToggle} />
+          </div>
+        </div>
       </SidebarFooter>
     </Sidebar>
   );
