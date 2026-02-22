@@ -2,6 +2,7 @@
 
 import { useMemo } from "react";
 import * as THREE from "three";
+import { useThree } from "@react-three/fiber";
 import { GLOBE_RADIUS } from "@/lib/constants";
 import { findCountryAtPoint } from "@/lib/geo-utils";
 import type { FeatureBBox } from "@/lib/geo-utils";
@@ -18,6 +19,7 @@ export function CountryHitSphere({
   onCountryLeave: () => void;
   onCountryClick: (iso3: string) => void;
 }) {
+  const gl = useThree((s) => s.gl);
   const geometry = useMemo(() => new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64), []);
   const material = useMemo(
     () => new THREE.MeshBasicMaterial({ transparent: true, opacity: 0, depthWrite: false }),
@@ -37,12 +39,17 @@ export function CountryHitSphere({
 
         const feature = findCountryAtPoint(lon, lat, bboxes);
         if (feature) {
+          gl.domElement.style.cursor = "pointer";
           onCountryHover(feature.id, feature.properties.name, e.nativeEvent.clientX, e.nativeEvent.clientY);
         } else {
+          gl.domElement.style.cursor = "default";
           onCountryLeave();
         }
       }}
-      onPointerLeave={onCountryLeave}
+      onPointerLeave={() => {
+        gl.domElement.style.cursor = "default";
+        onCountryLeave();
+      }}
       onClick={(e) => {
         e.stopPropagation();
         const point = e.point;

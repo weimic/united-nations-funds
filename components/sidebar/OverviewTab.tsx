@@ -148,7 +148,7 @@ export function OverviewTab() {
         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-cyan-500/15 shrink-0">
           <button
             onClick={() => setGlobalView("main")}
-            className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
+            className="cursor-pointer flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Overview
@@ -173,7 +173,7 @@ export function OverviewTab() {
                     setCountryDetailSource("overview");
                     setSidebarTab("countries");
                   }}
-                  className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
+                  className="cursor-pointer w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
                 >
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-[9px] font-mono text-cyan-400/40 w-5 shrink-0">
@@ -216,7 +216,7 @@ export function OverviewTab() {
         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-cyan-500/15 shrink-0">
           <button
             onClick={() => setGlobalView("main")}
-            className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
+            className="cursor-pointer flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Overview
@@ -238,7 +238,7 @@ export function OverviewTab() {
                   setNavigationSource("overview");
                   setSidebarTab("crises");
                 }}
-                className="w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
+                className="cursor-pointer w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[9px] font-mono text-cyan-400/40 w-5 shrink-0">
@@ -290,7 +290,7 @@ export function OverviewTab() {
         <div className="flex items-center gap-2 px-3 py-2.5 border-b border-cyan-500/15 shrink-0">
           <button
             onClick={() => setGlobalView("main")}
-            className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
+            className="cursor-pointer flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
           >
             <ArrowLeft className="h-3.5 w-3.5" />
             Overview
@@ -311,7 +311,7 @@ export function OverviewTab() {
                   setCountryDetailSource("overview");
                   setSidebarTab("countries");
                 }}
-                className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
+                className="cursor-pointer w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
               >
                 <div className="flex items-center gap-2 mb-1">
                   <span className="text-[9px] font-mono text-cyan-400/40 w-5 shrink-0">
@@ -375,7 +375,7 @@ export function OverviewTab() {
               </div>
               <button
                 onClick={() => setGlobalView("underlooked-crises-all")}
-                className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
+                className="cursor-pointer text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
               >
                 Show all
               </button>
@@ -401,7 +401,7 @@ export function OverviewTab() {
                       setNavigationSource("overview");
                       setSidebarTab("crises");
                     }}
-                    className="w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
+                    className="cursor-pointer w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
                   >
                     <div className="flex items-start gap-2 mb-1">
                       <span className="text-[9px] font-mono text-cyan-400/40 w-4 shrink-0">
@@ -472,7 +472,7 @@ export function OverviewTab() {
                 </p>
                 <button
                   onClick={() => setGlobalView("funding-gap-all")}
-                  className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
+                  className="cursor-pointer text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
                 >
                   Show all
                 </button>
@@ -627,7 +627,7 @@ export function OverviewTab() {
                 </div>
                 <button
                   onClick={() => setGlobalView("underlooked-countries-all")}
-                  className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
+                  className="cursor-pointer text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
                 >
                   Show all
                 </button>
@@ -651,7 +651,7 @@ export function OverviewTab() {
                         setCountryDetailSource("overview");
                         setSidebarTab("countries");
                       }}
-                      className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
+                      className="cursor-pointer w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
                     >
                       <div className="flex items-center gap-2 mb-1">
                         <span className="text-[9px] font-mono text-cyan-400/40 w-4 shrink-0">

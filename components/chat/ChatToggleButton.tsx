@@ -14,7 +14,7 @@ export function ChatToggleButton({ isOpen, onClick }: ChatToggleButtonProps) {
       onClick={onClick}
       title={isOpen ? "Close AI chat" : "Chat with AI"}
       className={cn(
-        "flex items-center justify-center w-8 h-8 rounded-full",
+        "cursor-pointer flex items-center justify-center w-8 h-8 rounded-full",
         "bg-black/80 backdrop-blur-sm border border-cyan-500/30",
         "shadow-[0_0_10px_rgba(0,200,255,0.15)]",
         "text-cyan-400 hover:bg-black/90 hover:border-cyan-400/50 transition-all",

@@ -170,7 +170,7 @@ export function CountriesTab() {
           </div>
           <button
             onClick={() => setShowSortFilter((prev) => !prev)}
-            className={`h-9 w-9 shrink-0 rounded-md border transition-colors flex items-center justify-center ${
+            className={`cursor-pointer h-9 w-9 shrink-0 rounded-md border transition-colors flex items-center justify-center ${
               showSortFilter
                 ? "border-cyan-500/50 bg-cyan-500/10 text-cyan-300"
                 : "border-cyan-500/20 bg-black/40 text-cyan-400/60 hover:border-cyan-500/40 hover:text-cyan-300"
@@ -284,7 +284,7 @@ export function CountriesTab() {
                   setSelectedCountryIso3(country.iso3);
                   setGlobeFocusIso3(country.iso3);
                 }}
-                className={`flex items-center gap-3 rounded-md px-3 py-2 text-left transition-all ${
+                className={`cursor-pointer flex items-center gap-3 rounded-md px-3 py-2 text-left transition-all ${
                   isSelected
                     ? "bg-cyan-500/10 border border-cyan-500/30 shadow-[0_0_10px_rgba(0,200,255,0.1)]"
                     : "hover:bg-cyan-500/5 border border-transparent hover:border-cyan-500/15"

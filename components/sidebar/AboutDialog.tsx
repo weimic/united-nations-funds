@@ -234,7 +234,7 @@ export function AboutDialog() {
       <DialogTrigger asChild>
         <button
           title="About this tool"
-          className="flex items-center justify-center w-8 h-8 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/30 shadow-[0_0_10px_rgba(0,200,255,0.15)] text-cyan-400 hover:bg-black/90 hover:border-cyan-400/50 transition-all"
+          className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/30 shadow-[0_0_10px_rgba(0,200,255,0.15)] text-cyan-400 hover:bg-black/90 hover:border-cyan-400/50 transition-all"
         >
           <Info className="h-4 w-4" />
         </button>

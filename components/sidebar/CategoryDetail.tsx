@@ -63,7 +63,7 @@ export function CategoryDetail({
       <div className="flex items-center gap-2 px-3 py-2.5 border-b border-cyan-500/15 shrink-0">
         <button
           onClick={onBack}
-          className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
+          className="cursor-pointer flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
           Categories
@@ -154,7 +154,7 @@ export function CategoryDetail({
                   <button
                     key={crisis.crisisId}
                     onClick={() => setActiveCrisis(crisis)}
-                    className="group w-full flex items-start justify-between gap-2 rounded-lg p-3 text-left transition-all border border-red-500/10 hover:border-red-500/30 hover:bg-red-500/5"
+                    className="cursor-pointer group w-full flex items-start justify-between gap-2 rounded-lg p-3 text-left transition-all border border-red-500/10 hover:border-red-500/30 hover:bg-red-500/5"
                   >
                     <div className="flex-1 min-w-0">
                       <span className="text-[12px] font-medium leading-tight text-foreground block truncate">
