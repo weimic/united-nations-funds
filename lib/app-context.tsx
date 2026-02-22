@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react";
 import type {
   CrisisData,
   CrisisCountryEntry,
@@ -16,8 +16,6 @@ interface AppContextType {
   setSelectedCountryIso3: (iso3: string | null) => void;
   sidebarTab: "crises" | "countries" | "overview";
   setSidebarTab: (tab: "crises" | "countries" | "overview") => void;
-  crisisModalOpen: boolean;
-  setCrisisModalOpen: (open: boolean) => void;
   activeCategories: Set<string>;
   setActiveCategories: (cats: Set<string>) => void;
   /** ISO3 to rotate globe to face */
@@ -54,15 +52,15 @@ export function AppProvider({
   const [activeCrisis, setActiveCrisis] = useState<CrisisData | null>(null);
   const [selectedCountryIso3, setSelectedCountryIso3] = useState<string | null>(null);
   const [sidebarTab, setSidebarTab] = useState<"crises" | "countries" | "overview">("overview");
-  const [crisisModalOpen, setCrisisModalOpen] = useState(false);
   const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
   const [globeFocusIso3, setGlobeFocusIso3] = useState<string | null>(null);
   const [spikeMode, setSpikeMode] = useState<"fundingGap" | "severity">("fundingGap");
   const [mapStyle, setMapStyle] = useState<"dots" | "solid">("dots");
   const [spikeColorMode, setSpikeColorMode] = useState<"default" | "spectrum">("default");
 
-  const activeCrisisCountryCodes = new Set(
-    activeCrisis?.countries.map((c) => c.iso3) ?? []
+  const activeCrisisCountryCodes = useMemo(
+    () => new Set(activeCrisis?.countries.map((c) => c.iso3) ?? []),
+    [activeCrisis]
   );
 
   const getCrisisEntry = useCallback(
@@ -102,8 +100,6 @@ export function AppProvider({
         setSelectedCountryIso3,
         sidebarTab,
         setSidebarTab,
-        crisisModalOpen,
-        setCrisisModalOpen,
         activeCategories,
         setActiveCategories,
         globeFocusIso3,
