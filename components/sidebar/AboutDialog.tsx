@@ -254,8 +254,12 @@ export function AboutDialog() {
 
         <DialogHeader className="relative z-10 px-5 pt-5 pb-0 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-cyan-100 font-mono tracking-tight">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-red-600 to-red-800 shadow-[0_0_10px_rgba(220,40,40,0.3)]">
-              <AlertTriangle className="h-3.5 w-3.5 text-white" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-red-600 to-red-800 shadow-[0_0_10px_rgba(220,40,40,0.3)]">
+              <img
+                src="/logo3.svg"
+                alt="VisiUN logo"
+                className="h-8 w-8 rounded-lg shadow-[0_0_12px_rgba(220,40,40,0.5)]"
+              />
             </div>
             VisiUN
           </DialogTitle>
