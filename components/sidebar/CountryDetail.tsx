@@ -4,7 +4,6 @@ import { useMemo } from "react";
 import { useAppContext } from "@/lib/app-context";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Badge } from "@/components/ui/badge";
-import { Progress } from "@/components/ui/progress";
 import { Separator } from "@/components/ui/separator";
 import {
   AlertTriangle,
@@ -345,7 +344,6 @@ function CountryDetailInner({
                   </span>
                 </div>
                 <div className="space-y-1.5">
-                  {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
                   {[...overall.planLines]
                     // eslint-disable-next-line @typescript-eslint/no-explicit-any
                     .sort((a: any, b: any) => b.requirements - a.requirements)
