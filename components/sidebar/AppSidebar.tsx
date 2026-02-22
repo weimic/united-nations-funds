@@ -10,7 +10,6 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Globe2, AlertTriangle, MapPin } from "lucide-react";
 
-import { SpikeSelector } from "./SpikeSelector";
 import { OverviewTab } from "./OverviewTab";
 import { CrisesTab } from "./CrisesTab";
 import { CountriesTab } from "./CountriesTab";
@@ -51,7 +50,6 @@ export default function AppSidebar() {
 
       <SidebarContent className="relative z-10 p-0 overflow-hidden flex flex-col">
         <div className="group-data-[collapsible=icon]:hidden flex flex-col flex-1 min-h-0 px-2 pb-2">
-          <SpikeSelector />
           <Tabs
             value={sidebarTab}
             onValueChange={(v) =>

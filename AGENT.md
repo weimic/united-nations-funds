@@ -12,9 +12,10 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 
 ## Current Product Capabilities
 - **Overview tab analytics** (formerly "Global" tab)
-	- Underlooked crises ranking (top 10 by default) with **Show all** drilldown.
+	- Underlooked crises ranking (top 10 by default) with **Show all** drilldown. Substats: Severity, Funded %, Gap. Score bar is solid red (`bg-red-500`) on a lighter muted track (`bg-muted/30`).
 	- Absolute funding gap ranking (top 10 by default) with **Show all** drilldown.
-	- Underlooked countries table (severity-adjusted neglect index).
+	- Underlooked countries ranking (top 10 by default) with **Show all** drilldown. Substats: Severity, Funded %, Gap, Off-appeal. Score bar is solid red on lighter muted track.
+	- All three **Show all** buttons are underlined (`underline underline-offset-2`) for discoverability.
 	- Global humanitarian overview cards and funding progress (at bottom of page).
 - **Countries tab controls**
 	- Search by name/ISO3.
@@ -42,9 +43,9 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- **Selected country borders**: clicking a country (via sidebar or globe) persistently highlights its borders on the globe.
 	- **Hover tooltip**: left-aligned with dark background (`bg-black/90`), backdrop blur, and cyan border. Shows country name, severity, funding, and click prompt.
 	- Click-through from spike or country surface to country detail.
-	- **Globe controls** (bottom-right, stacked vertically): two labeled switch bars using consistent pill style.
-		- **Spikes switch**: "Spikes: Funding [toggle] Severity" — switches spike data between funding gap and severity modes. Knob turns red in severity mode.
-		- **View switch**: "View: Dots [toggle] Countries" — switches between dot-cloud and solid country-fill map styles.
+	- **Globe controls** (bottom-right, stacked vertically): two labeled switch bars using consistent pill style with cyan color scheme.
+		- **View switch** (top): "View: Dots [toggle] Countries" — switches between dot-cloud and solid country-fill map styles.
+		- **Spikes switch** (bottom): "Spikes: Funding [toggle] Severity" — switches spike data between funding gap and severity modes. Uses cyan colors matching the View switch.
 	- **Spike color mode** (context state only, no UI toggle): `spikeColorMode` still exists in context for programmatic use; spectrum mode colors each spike yellow-to-red by magnitude. Spike material uses `MeshBasicMaterial` with white base color so instance colors render correctly.
 	- **Map style: solid fill**: severity-based colors for crisis countries, base blue for data countries without severity, and white for neutral countries with no data. Ocean color is preserved.
 	- **Solid country map**: aligned to match dot map via −π/2 Y-axis rotation on the texture sphere. Rendered at 8192×4096 resolution with anisotropic filtering (16×), mipmap generation, subtle country border strokes, and 128-segment sphere geometry for crisp rendering.
