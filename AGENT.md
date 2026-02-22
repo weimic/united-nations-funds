@@ -29,9 +29,10 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- Crisis drivers listed at the bottom.
 - **Crisis detail**
 	- Aggregate stats (requirements, funded, CBPF, gap).
-	- CBPF funding vs cost-per-person chart.
-	- Country rankings by neglect index.
-	- Clicking a country in crisis detail focuses globe and highlights that country's borders.
+	- CBPF Funding bar chart (standalone, no cost-per-person overlay). X-axis labels rotate at −35° and truncate when dense to prevent overlap.
+	- Targeted vs Reached line chart (straight lines) showing targeted (green) and reached (red) people per cluster, displayed beneath the CBPF chart.
+	- Single country card styled like the Underlooked Countries cards (neglect index bar, severity/funded/gap stats). Heading reads "Country" (not "Country Rankings").
+	- Clicking the country card focuses globe and highlights that country's borders.
 - **Crises tab**
 	- Category-based crisis browsing with per-category stats.
 - **Globe interaction**
