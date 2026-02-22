@@ -105,7 +105,7 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
               Global Analysis
             </p>
           </div>
-          <div className="group-data-[collapsible=icon]:hidden shrink-0">
+          <div className="group-data-[collapsible=icon]:hidden shrink-0 ml-auto">
             <AboutDialog />
           </div>
         </div>

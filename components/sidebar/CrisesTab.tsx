@@ -55,7 +55,7 @@ export function CrisesTab() {
             <button
               key={cat}
               onClick={() => setSelectedCategory(cat)}
-              className="group flex items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition-all border border-red-500/10 hover:border-red-500/28 hover:bg-red-500/5 hover:shadow-[0_0_10px_rgba(255,30,30,0.07)]"
+              className="cursor-pointer group flex items-center justify-between gap-3 rounded-lg px-3 py-3 text-left transition-all border border-red-500/10 hover:border-red-500/28 hover:bg-red-500/5 hover:shadow-[0_0_10px_rgba(255,30,30,0.07)]"
             >
               <div className="min-w-0">
                 <p className="text-sm font-medium text-foreground truncate">{cat}</p>

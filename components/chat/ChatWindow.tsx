@@ -96,7 +96,7 @@ export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = f
             {onToggleFullscreen && (
               <button
                 onClick={onToggleFullscreen}
-                className="p-1 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+                className="cursor-pointer p-1 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
                 title={isFullscreen ? "Restore" : "Fullscreen"}
               >
                 {isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
@@ -104,7 +104,7 @@ export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = f
             )}
             <button
               onClick={clearMessages}
-              className="p-1 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+              className="cursor-pointer p-1 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
               title="Clear chat"
             >
               <Trash2 className="h-3 w-3" />
@@ -126,7 +126,7 @@ export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = f
                   <button
                     key={q}
                     onClick={() => handleSuggestedQuestion(q)}
-                    className="text-left text-[10px] text-cyan-400/60 hover:text-cyan-300 px-2 py-1.5 rounded border border-cyan-500/10 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-colors font-mono"
+                    className="cursor-pointer text-left text-[10px] text-cyan-400/60 hover:text-cyan-300 px-2 py-1.5 rounded border border-cyan-500/10 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-colors font-mono"
                   >
                     {q}
                   </button>
@@ -190,7 +190,7 @@ export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = f
             <button
               type="submit"
               disabled={isLoading || !input.trim()}
-              className="px-2.5 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/25 hover:border-cyan-400/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+              className="cursor-pointer px-2.5 py-1.5 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/25 hover:border-cyan-400/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
             >
               <Send className="h-3.5 w-3.5" />
             </button>
@@ -221,14 +221,14 @@ export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = f
         <div className="flex items-center gap-1">
           <button
             onClick={clearMessages}
-            className="p-1.5 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+            className="cursor-pointer p-1.5 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
             title="Clear chat"
           >
             <Trash2 className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={onClose}
-            className="p-1.5 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+            className="cursor-pointer p-1.5 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
             title="Close"
           >
             <X className="h-3.5 w-3.5" />
@@ -250,7 +250,7 @@ export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = f
                   <button
                     key={q}
                     onClick={() => handleSuggestedQuestion(q)}
-                    className="text-left text-xs text-cyan-400/60 hover:text-cyan-300 px-3 py-2 rounded border border-cyan-500/10 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-colors font-mono"
+                    className="cursor-pointer text-left text-xs text-cyan-400/60 hover:text-cyan-300 px-3 py-2 rounded border border-cyan-500/10 hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-colors font-mono"
                   >
                     {q}
                   </button>
@@ -318,7 +318,7 @@ export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = f
           <button
             type="submit"
             disabled={isLoading || !input.trim()}
-            className="px-3 py-2 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/25 hover:border-cyan-400/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+            className="cursor-pointer px-3 py-2 rounded-lg bg-cyan-500/15 border border-cyan-500/30 text-cyan-400 hover:bg-cyan-500/25 hover:border-cyan-400/50 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
           >
             <Send className="h-4 w-4" />
           </button>
