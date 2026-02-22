@@ -464,7 +464,7 @@ export function OverviewTab() {
         {/* Top 10 Absolute Funding Gaps */}
         {fundingGapData.length > 0 && (
           <>
-            <Separator className="bg-cyan-400/70 my-2" />
+            <Separator className="bg-cyan-400/70 my-5" />
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-1">
                 <p className="text-[23px] font-mono uppercase tracking-widest text-cyan-400/70 leading-tight">
@@ -614,7 +614,7 @@ export function OverviewTab() {
         {/* Overlooked Countries Table */}
         {neglectCountryRanking.length > 0 && (
           <>
-            <Separator className="bg-cyan-400/70 my-2" />
+            <Separator className="bg-cyan-400/70 my-5" />
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-1">
                 <div className="flex items-center gap-2.5">
@@ -695,7 +695,7 @@ export function OverviewTab() {
         )}
 
         {/* Global Humanitarian Overview */}
-        <Separator className="bg-cyan-400/70 my-2" />
+        <Separator className="bg-cyan-400/70 my-5" />
         <div className="space-y-2">
           <p className="text-[23px] font-mono uppercase tracking-widest text-cyan-400/70 px-1 leading-tight">
             Global Humanitarian Overview
