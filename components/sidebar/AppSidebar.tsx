@@ -105,7 +105,7 @@ export default function AppSidebar() {
 
       <SidebarFooter className="relative z-10 border-t border-cyan-500/15 p-3 group-data-[collapsible=icon]:hidden shrink-0">
         <p className="text-[10px] font-mono text-cyan-400/30 text-center tracking-widest uppercase">
-          OCHA FTS · INFORM · CBPF
+          <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://fts.unocha.org/">OCHA FTS</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://www.acaps.org/en/thematics/all-topics/inform-severity-index">INFORM</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://data.humdata.org/">HDX</a>
         </p>
       </SidebarFooter>
     </Sidebar>

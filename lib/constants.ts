@@ -1,3 +1,5 @@
+import type React from "react";
+
 /** Application-wide constants */
 
 /** Year used to filter FTS and CBPF datasets */
@@ -17,16 +19,22 @@ export const MAX_SPIKE_COUNTRIES = 60;
 export const LANDMASS_DOT_COUNT = 25_000;
 
 /** Chart tooltip shared styles */
-export const CHART_TOOLTIP_STYLE = {
+export const CHART_TOOLTIP_STYLE: React.CSSProperties = {
   background: "rgba(2, 8, 20, 0.97)",
   border: "1px solid rgba(0,200,255,0.25)",
   borderRadius: "8px",
   fontSize: "11px",
   fontFamily: "monospace",
   padding: "8px 12px",
-} as const;
+  maxWidth: "240px",
+  whiteSpace: "normal",
+  wordBreak: "break-word",
+};
 
-export const CHART_LABEL_STYLE = {
+export const CHART_LABEL_STYLE: React.CSSProperties = {
   color: "rgba(0,200,255,0.85)",
   fontWeight: 600,
-} as const;
+  whiteSpace: "normal",
+  overflow: "visible",
+  textOverflow: "unset",
+};

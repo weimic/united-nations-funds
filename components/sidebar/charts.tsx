@@ -90,9 +90,10 @@ function ClusterChart({
             width={52}
             label={{
               value: "CBPF ($K)",
-              angle: -90,
-              position: "insideLeft",
-              offset: -40,
+              angle: 0,
+              position: "insideTopLeft",
+              offset: 0,
+              dy: -14,
               style: { fontSize: 8, fill: "rgba(34,211,238,0.5)", fontFamily: "monospace" },
             }}
           />
@@ -106,9 +107,10 @@ function ClusterChart({
             width={46}
             label={{
               value: "$ / Person",
-              angle: 90,
-              position: "insideRight",
-              offset: -30,
+              angle: 0,
+              position: "insideTopRight",
+              offset: 0,
+              dy: -14,
               style: { fontSize: 8, fill: "rgba(248,113,113,0.5)", fontFamily: "monospace" },
             }}
           />
@@ -277,33 +279,63 @@ type CrisisClusterRow = {
   reached: number;
 };
 
-/** Angled X-axis tick for the CBPF bar chart — avoids label overlap when bars are narrow. */
+/**
+ * Wrapping X-axis tick for CBPF-related charts.
+ * Renders labels horizontally, splitting into up to 2 lines.
+ * If the second line exceeds the character budget, it is truncated with "…".
+ */
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-function AngledTick({ x, y, payload, data }: any) {
+function WrappingTick({ x, y, payload, data }: any) {
   const full =
     (data as CrisisClusterRow[]).find((d) => d.name === payload?.value)?.fullName ??
     payload?.value ??
     "";
-  const label: string = payload?.value ?? "";
-  const truncated =
-    (data as CrisisClusterRow[]).length > 4 && label.length > 8
-      ? label.slice(0, 8) + "…"
-      : label;
+
+  const MAX_LINE_CHARS = 12;
+  const words = full.split(/[\s/]+/);
+  const lines: string[] = [];
+  let currentLine = "";
+
+  for (const word of words) {
+    if (currentLine.length + (currentLine ? 1 : 0) + word.length <= MAX_LINE_CHARS) {
+      currentLine = currentLine ? `${currentLine} ${word}` : word;
+    } else {
+      if (currentLine) lines.push(currentLine);
+      currentLine = word;
+    }
+  }
+  if (currentLine) lines.push(currentLine);
+
+  // Collapse to at most 2 lines
+  let displayLines: string[];
+  if (lines.length <= 2) {
+    displayLines = lines;
+  } else {
+    displayLines = [lines[0], lines.slice(1).join(" ")];
+  }
+
+  // Truncate second line if too long
+  if (displayLines[1] && displayLines[1].length > MAX_LINE_CHARS) {
+    displayLines[1] = displayLines[1].slice(0, MAX_LINE_CHARS - 1) + "…";
+  }
+
   return (
     <g transform={`translate(${x},${y})`}>
       <title>{full}</title>
-      <text
-        x={0}
-        y={0}
-        dy={8}
-        textAnchor="end"
-        fontSize={8}
-        fill="rgba(0,200,255,0.55)"
-        fontFamily="monospace"
-        transform="rotate(-35)"
-      >
-        {truncated}
-      </text>
+      {displayLines.map((line, i) => (
+        <text
+          key={i}
+          x={0}
+          y={0}
+          dy={10 + i * 11}
+          textAnchor="middle"
+          fontSize={8}
+          fill="rgba(0,200,255,0.55)"
+          fontFamily="monospace"
+        >
+          {line}
+        </text>
+      ))}
     </g>
   );
 }
@@ -361,7 +393,7 @@ export function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
               <XAxis
                 dataKey="name"
-                tick={<AngledTick data={chartData} />}
+                tick={<WrappingTick data={chartData} />}
                 interval={0}
                 tickLine={false}
                 axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
@@ -376,15 +408,21 @@ export function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
                 width={48}
                 label={{
                   value: "CBPF ($K)",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: -34,
+                  angle: 0,
+                  position: "insideTopLeft",
+                  offset: 0,
+                  dy: -14,
                   style: { fontSize: 8, fill: "rgba(34,211,238,0.5)", fontFamily: "monospace" },
                 }}
               />
               <Tooltip
+                cursor={false}
                 contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={CHART_LABEL_STYLE}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                labelFormatter={(_label: any, payload: any) =>
+                  payload?.[0]?.payload?.fullName ?? _label
+                }
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 formatter={(value: any) => [`$${Number(value ?? 0).toLocaleString()}K`, "CBPF"]}
               />
@@ -394,6 +432,7 @@ export function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
                 fill="#22d3ee"
                 radius={[3, 3, 0, 0]}
                 opacity={0.85}
+                activeBar={{ fill: "#67e8f9", opacity: 1 }}
               />
             </BarChart>
           </ResponsiveContainer>
@@ -411,7 +450,7 @@ export function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
               <XAxis
                 dataKey="name"
-                tick={<AngledTick data={chartData} />}
+                tick={<WrappingTick data={chartData} />}
                 interval={0}
                 tickLine={false}
                 axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
@@ -428,19 +467,27 @@ export function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
                 width={48}
                 label={{
                   value: "People",
-                  angle: -90,
-                  position: "insideLeft",
-                  offset: -34,
+                  angle: 0,
+                  position: "insideTopLeft",
+                  offset: 0,
+                  dy: -14,
                   style: { fontSize: 8, fill: "rgba(34,211,238,0.5)", fontFamily: "monospace" },
                 }}
               />
               <Tooltip
+                cursor={false}
                 contentStyle={CHART_TOOLTIP_STYLE}
                 labelStyle={CHART_LABEL_STYLE}
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                itemSorter={(item: any) => (String(item.name).toLowerCase() === "targeted" ? -1 : 1)}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                labelFormatter={(_label: any, payload: any) =>
+                  payload?.[0]?.payload?.fullName ?? _label
+                }
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 formatter={(value: any, name: any) => {
                   const v = Number(value ?? 0);
-                  const label = name === "targeted" ? "Targeted" : "Reached";
+                  const label = String(name).toLowerCase() === "targeted" ? "Targeted" : "Reached";
                   return [v.toLocaleString(), label];
                 }}
               />

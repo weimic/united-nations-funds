@@ -10,11 +10,21 @@ import type {
   CrisisCountryAllocation,
   CrisisData,
   CrisisCountryEntry,
+  CrisisTimelineEvent,
   UnifiedCountryData,
   GeoData,
   GlobalStats,
   SerializedData,
 } from "./types";
+import { detectAllAnomalies } from "./anomalies";
+
+/** Raw shape of entries in crisisdetails.json */
+interface RawCrisisDetail {
+  crisis_name: string;
+  summary: string;
+  timeline: { date: string; name: string; description: string }[];
+  related_links: string[];
+}
 
 const TARGET_YEAR = 2025;
 
@@ -576,6 +586,7 @@ export function aggregateAllData(): AggregatedData {
         fundingGapPerCapita,
         reachRatio,
         cbpfDependency,
+        anomalies: [],
       };
     });
 
@@ -616,8 +627,39 @@ export function aggregateAllData(): AggregatedData {
     });
   }
 
+  // ── Merge crisis details (summary, timeline, related links) ──────────────
+  const detailsRaw = fs.readFileSync(
+    path.join(process.cwd(), "public", "data", "crisisdetails.json"),
+    "utf-8",
+  );
+  const crisisDetails: RawCrisisDetail[] = JSON.parse(detailsRaw);
+
+  // Build a lookup keyed on lowercase crisis_name for fuzzy matching
+  const detailMap = new Map<string, RawCrisisDetail>();
+  for (const d of crisisDetails) {
+    detailMap.set(d.crisis_name.toLowerCase().trim(), d);
+  }
+
+  for (const crisis of crises) {
+    const detail = detailMap.get(crisis.crisisName.toLowerCase().trim());
+    if (detail) {
+      crisis.summary = detail.summary;
+      crisis.timeline = detail.timeline.map(
+        (t): CrisisTimelineEvent => ({
+          date: t.date,
+          name: t.name,
+          description: t.description,
+        }),
+      );
+      crisis.relatedLinks = detail.related_links;
+    }
+  }
+
   // Sort crises by name
   crises.sort((a, b) => a.crisisName.localeCompare(b.crisisName));
+
+  // Detect statistical anomalies within each crisis cohort
+  detectAllAnomalies(crises);
 
   // Compute global stats
   const globalStats: GlobalStats = {

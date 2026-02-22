@@ -227,7 +227,94 @@ This aligns with expert humanitarian consensus on which crises are structurally 
 
 ---
 
-## 7. Visualization & UI Roadmap (Very Specific)
+## 7. Anomaly Detection — Percentile-Based Outlier Flagging
+
+*Implemented in `lib/anomalies.ts`. Surfaced in Crisis Detail via `AnomalyBadge.tsx`.*
+
+### Motivation
+
+Humanitarian funding distributions are inherently noisy. A country may receive only 1% of its appeal requirements while the median is ~25%, or a high-severity crisis may be disproportionately underfunded. These statistical outliers often indicate **structural neglect, reporting gaps, or pipeline failures** that merit analyst attention. Rather than requiring manual inspection of every data point, we surface them automatically as inline anomaly badges with hover explanations.
+
+### Why Not Z-Scores?
+
+The initial implementation used parametric z-scores ($z = (x_i - \bar{x}) / \sigma$) with thresholds at $|z| \geq 2$ (warning) and $|z| \geq 3$ (critical). This approach **produced zero anomalies** across all metrics because:
+
+1. **Heavy right skew**: humanitarian funding data has $\sigma \approx \bar{x}$ for most metrics (e.g., % funded: mean 25.8%, std 26.0%). A $z \leq -2$ threshold would require a value of $\bar{x} - 2\sigma = -26.2\%$, which is impossible for a percentage.
+2. **Long right tails**: a few well-funded countries inflate both mean and variance, making the entire left tail appear "normal" under parametric assumptions.
+3. **Same issue across all metrics**: dollar-per-person ($z = -2$ requires $-\$34.85$), reach ratio ($z = -2$ requires $-10.4\%$) — all impossible.
+
+### Method: Percentile-Based Outlier Detection
+
+Instead, we use **percentile ranking**, which is distribution-agnostic. Each country is ranked against a global cohort (all crisis-affected countries with valid data for a given metric), and its percentile position determines severity:
+
+$$P_i = \frac{i}{n - 1} \times 100$$
+
+where $i$ is the 0-indexed rank in ascending order and $n$ is the cohort size. This correctly identifies tail extremes regardless of distribution shape.
+
+**Global cohort**: since the INFORM dataset maps each crisis as a single-country entry (126 crises, each with exactly 1 country), per-crisis cohorts are always size 1 — far too small for any statistical method. Instead, all unique countries across all crises are pooled by ISO3 into a single global cohort. For FTS-based metrics this yields ~66 countries.
+
+**Minimum cohort size**: 5 countries. If fewer than 5 countries have valid data for a metric, percentile ranking is skipped for that metric.
+
+### Thresholds
+
+| Percentile Position | Severity | Interpretation |
+|---------------------|----------|----------------|
+| $P \leq 5$ (bottom 5%) | **Critical** | Extreme tail — most deprived relative to global peers |
+| $5 < P \leq 10$ (bottom 5–10%) | **Warning** | Notable outlier — significantly below peers |
+| $P \geq 95$ (top 5%) | **Critical** | Extreme tail — highest concentration/dependency |
+| $90 \leq P < 95$ (top 5–10%) | **Warning** | Notable outlier — significantly above peers |
+| $10 < P < 90$ | *No flag* | Within normal variation for the global cohort |
+
+### Metrics Analyzed
+
+| # | Metric | Formula | Flag Direction | Rationale |
+|---|--------|---------|----------------|----------|
+| 1 | **Percent funded** | $\frac{\text{FTS on-appeal funding}}{\text{requirements}} \times 100$ | Low (bottom P10) | Countries receiving the smallest share of their requirements — genuinely underfunded appeals |
+| 2 | **Funding gap per capita** | $\frac{\text{requirements} - \text{funding}}{\text{people targeted}}$ | High (top P10) | Countries with the largest per-person shortfalls |
+| 3 | **Severity-funding mismatch** | $\frac{\text{INFORM severity index}}{\text{percent funded}}$ | High (top P10) | High-severity countries that are disproportionately underfunded — the core "neglected crisis" signal |
+
+### Why Only Three Metrics?
+
+An earlier implementation tested six metrics. Critical review revealed that four were noisy or misleading:
+
+- **Dollar per person** (CBPF allocation / targeted people): Conflated CBPF allocation with total funding adequacy — a country could receive massive bilateral aid but still flag because CBPF was small.
+- **Reach ratio** (people reached / people targeted): Mostly flagged data-lag false positives — many countries report zero reached mid-year simply because results haven't been submitted yet.
+- **Overfunded** (percent funded > 100%): An accounting artifact from appeal revisions, not a real anomaly — requirements often decrease mid-year while funding continues arriving.
+- **Zero CBPF**: Flagged countries without a CBPF mechanism as anomalous — most of these countries simply don't participate in the pooled fund system, which is not unusual.
+
+The three retained metrics are the most actionable and least prone to false positives.
+
+### Current Detection Results (2025 Data Snapshot)
+
+Based on the live datasets, the percentile engine detects approximately **15–20 anomalies** across **~12 unique countries**:
+
+| Metric | Cohort Size | Critical | Warning | Example Flags |
+|--------|-------------|----------|---------|---------------|
+| Percent funded (low) | ~66 | ~4 | ~3 | Countries funded at <2% of requirements |
+| Funding gap/capita (high) | ~40 | ~2 | ~2 | Largest per-person shortfalls |
+| Severity-funding mismatch (high) | ~60 | ~3 | ~3 | High-severity countries with low funding shares |
+
+### Implementation Details
+
+1. **Build-time computation**: anomalies are detected during `aggregateAllData()` in `data-aggregator.ts` — after crisis/country data is fully assembled but before serialization. There is no runtime cost.
+2. **Global cohort with ISO3 deduplication**: a country appearing in multiple crises is evaluated once against all peers. Results propagate to every `CrisisCountryEntry` sharing the same ISO3.
+3. **Sorting**: within each country, anomalies are ordered critical-first, then by percentile rank ascending (lowest percentile = most extreme), so the most concerning findings surface first.
+4. **Data model**: each `CrisisCountryEntry` carries an `anomalies: FundingAnomaly[]` array. The `FundingAnomaly` type includes `metric` (union of three metric names), `description` (human-readable sentence), `zScore` (percentile rank, 0–100), and `severity` ("warning" or "critical").
+
+### UI Surfacing
+
+- **Crisis-level banner**: at the top of Crisis Detail, a hoverable summary banner shows the total anomaly count across all countries in the crisis, broken down by critical/warning severity and number of affected countries. Hovering the banner reveals a tooltip listing every anomaly's detail.
+- **Per-country badge**: each country card in the crisis detail shows a compact `AnomalyBadge` (amber for warning, red for critical). **Hovering the badge** reveals a tooltip listing each detected anomaly with its human-readable description — explaining *why* that specific country was flagged.
+
+### Limitations & Future Work
+
+- Percentile-based detection is **rank-invariant** — it does not distinguish between a country at 1% funded and one at 4% funded if they have similar ranks. Domain-specific thresholds could supplement percentiles for key interpretable cutoffs.
+- The three metrics are analyzed independently (univariate). Multivariate approaches (e.g., Mahalanobis distance) could capture correlated anomalies that individual percentile checks miss.
+- The global cohort pools very different country contexts (middle-income and LDCs together), which may mask within-group outliers. Sub-cohort analysis by income level or region could improve specificity.
+
+---
+
+## 8. Visualization & UI Roadmap (Very Specific)
 
 ### A) Global tab (where the key allocation narrative should live)
 1. **Stacked bar chart: “Top 10 absolute funding gaps”**

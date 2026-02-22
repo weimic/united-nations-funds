@@ -3811,5 +3811,36 @@
       "https://www.worldbank.org/en/country/zimbabwe",
       "https://www.crisisgroup.org/africa/southern-africa/zimbabwe"
     ]
+  },
+  {
+    "crisis_name": "Complex crisis in Afghanistan",
+    "summary": "The complex crisis in Afghanistan is characterized by more than four decades of protracted conflict, political instability, and severe economic contraction, leading to a multi-generational displacement emergency. Following the Taliban's return to power in August 2021 and the subsequent suspension of international development assistance, humanitarian needs surged dramatically, leaving over half the population dependent on aid for survival. These systemic vulnerabilities are further compounded by extreme climatic shocks, including severe droughts and flash flooding, as well as the recent mass, forced repatriation of Afghan refugees from neighboring host countries.",
+    "timeline": [
+      {
+        "date": "1979-12-24",
+        "name": "Soviet Invasion",
+        "description": "The Soviet Union initiated a military intervention in Afghanistan, triggering a decade-long conflict and the first massive waves of regional displacement."
+      },
+      {
+        "date": "2001-10-07",
+        "name": "Operation Enduring Freedom",
+        "description": "A United States-led international coalition launched a military campaign that rapidly dismantled the Taliban regime following the 9/11 attacks."
+      },
+      {
+        "date": "2020-02-29",
+        "name": "Doha Agreement",
+        "description": "The United States and the Taliban signed a formal peace agreement outlining the timeline for the complete withdrawal of international military forces."
+      },
+      {
+        "date": "2021-08-15",
+        "name": "Fall of Kabul",
+        "description": "The Taliban regained control of the capital, leading to the collapse of the internationally recognized republic and triggering a renewed, acute humanitarian emergency."
+      }
+    ],
+    "related_links": [
+      "https://www.unrefugees.org/news/afghanistan-refugee-crisis-explained/",
+      "https://www.cfr.org/global-conflict-tracker/conflict/war-afghanistan",
+      "https://concernusa.org/news/afghanistan-crisis-explained/"
+    ]
   }
 ]
