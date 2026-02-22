@@ -365,10 +365,10 @@ export function OverviewTab() {
         {neglectCrisisRanking.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 px-1">
-              <div className="flex items-center gap-2">
-                <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                <HoverTip tip="Crises receiving the least global attention relative to their severity and scale. Higher score = greater mismatch between need and funding.">
-                  <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
+              <div className="flex items-center gap-2.5">
+                <AlertTriangle className="h-6 w-6 text-red-400" />
+                <HoverTip tip="Crises receiving the least global attention relative to their severity and scale. Higher score = greater mismatch between need and funding." iconClassName="h-4 w-4">
+                  <p className="text-[23px] font-mono uppercase tracking-widest text-red-400/70 leading-tight">
                     Top 10 Overlooked Crises
                   </p>
                 </HoverTip>
@@ -464,10 +464,10 @@ export function OverviewTab() {
         {/* Top 10 Absolute Funding Gaps */}
         {fundingGapData.length > 0 && (
           <>
-            <Separator className="opacity-20 my-2" />
+            <Separator className="bg-cyan-400/70 my-2" />
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-1">
-                <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+                <p className="text-[23px] font-mono uppercase tracking-widest text-cyan-400/70 leading-tight">
                   Top 10 Absolute Funding Gaps
                 </p>
                 <button
@@ -614,13 +614,13 @@ export function OverviewTab() {
         {/* Overlooked Countries Table */}
         {neglectCountryRanking.length > 0 && (
           <>
-            <Separator className="opacity-20 my-2" />
+            <Separator className="bg-cyan-400/70 my-2" />
             <div className="space-y-2">
               <div className="flex items-center justify-between gap-2 px-1">
-                <div className="flex items-center gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                  <HoverTip tip="Countries where crisis severity is high but funding falls short. Ranked by a composite of severity, funding gap, and scale of need.">
-                    <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
+                <div className="flex items-center gap-2.5">
+                  <AlertTriangle className="h-6 w-6 text-red-400" />
+                  <HoverTip tip="Countries where crisis severity is high but funding falls short. Ranked by a composite of severity, funding gap, and scale of need." iconClassName="h-4 w-4">
+                    <p className="text-[23px] font-mono uppercase tracking-widest text-red-400/70 leading-tight">
                       Top 10 Overlooked Countries
                     </p>
                   </HoverTip>
@@ -695,9 +695,9 @@ export function OverviewTab() {
         )}
 
         {/* Global Humanitarian Overview */}
-        <Separator className="opacity-20 my-2" />
+        <Separator className="bg-cyan-400/70 my-2" />
         <div className="space-y-2">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70 px-1">
+          <p className="text-[23px] font-mono uppercase tracking-widest text-cyan-400/70 px-1 leading-tight">
             Global Humanitarian Overview
           </p>
 

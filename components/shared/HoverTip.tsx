@@ -10,14 +10,23 @@ import {
 import { Info } from "lucide-react";
 
 /** Inline tooltip for acronyms and concept explanations. */
-export function HoverTip({ children, tip }: { children: ReactNode; tip: string }) {
+export function HoverTip({
+  children,
+  tip,
+  iconClassName,
+}: {
+  children: ReactNode;
+  tip: string;
+  /** Override the default Info icon size classes (default: "h-2.5 w-2.5") */
+  iconClassName?: string;
+}) {
   return (
     <TooltipProvider delayDuration={200}>
       <UITooltip>
         <TooltipTrigger asChild>
-          <span className="inline-flex items-center gap-0.5 cursor-help">
+          <span className="inline-flex items-center gap-1 cursor-help">
             {children}
-            <Info className="h-2.5 w-2.5 text-cyan-400/30 hover:text-cyan-400/70 transition-colors" />
+            <Info className={`${iconClassName ?? "h-2.5 w-2.5"} text-cyan-400/30 hover:text-cyan-400/70 transition-colors`} />
           </span>
         </TooltipTrigger>
         <TooltipContent
