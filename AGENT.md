@@ -52,7 +52,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- When open, the sidebar splits: top 55% shows the normal stats/tabs, bottom 45% shows the chat panel. Both sections scroll independently — users can read crisis data while chatting.
 	- `ChatWindow` has an `embedded` prop: when true it renders as an inline flex column (no fixed overlay, no z-index competition); when false it renders as the classic full-height slide-in overlay (preserved for potential standalone use).
 	- Scroll is implemented with a plain `<div ref={scrollRef} className="overflow-y-auto">` so `scrollTop` manipulation works directly (replaces `ScrollArea` which wrapped the viewport, making direct `scrollTop` writes ineffective).
-	- Suggested questions shown on empty state; citations render as clickable chips that navigate the globe and sidebar.
+	- Suggested questions shown on empty state. When `focusIso3` is returned the globe focuses that country and the sidebar switches to the Countries tab.
 	- Chat state (`chatOpen`) lives in `ClientShell` and flows down into `AppSidebar` as `chatOpen` / `onChatToggle` props.
 
 ## Data Modeling Notes
@@ -78,15 +78,18 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 ## AI / LLM Architecture
 - **RAG pipeline**: LangChain LCEL — Pinecone vector retrieval → system prompt injection → OpenRouter/Llama-3 primary with HuggingFace/Mistral-7B automatic fallback → `StringOutputParser`.
 - **Response extraction pipeline** (route `app/api/chat/route.ts`):
-	1. Strip leading/trailing ` ```json ``` ` code fences (LLMs commonly wrap output).
-	2. **Plain-text key-value detection** (`isPlainTextKeyValueFormat`): if the stripped text starts with `Message:` and does *not* start with `{`, route to `extractPlainTextResponse` immediately — bypassing the brace-based JSON extraction that would otherwise mistake `{` inside the Citations array for a JSON envelope.
-	3. `extractPlainTextResponse` uses section-based parsing: `matchAll` locates every known key (`Message`, `FocusIso3`, `Citations`) at the start of a line, then slices between them. Multi-line / multi-paragraph messages are captured intact (fixes the earlier `$`-with-`m`-flag regex that truncated at the first line-end). Citations JSON is extracted from within the `[…]` brackets and parsed separately.
-	4. If not plain-text: find the outermost `{…}` bounding braces to isolate JSON even if the LLM adds preamble prose or trailing commentary.
-	5. `JSON.parse` the extracted slice; on failure fall back to `extractFallbackResponse` which tries boundary-based JSON key extraction, then plain-text parsing, before returning raw text.
-	6. Defensive post-parse normalization: ensure `message` is a non-empty string (also checks for a `text` alias), coerce `citations` to `[]` if absent or malformed, and drop `focusIso3` if it is not exactly a 3-character string.
-	7. `stripJsonEnvelope` as a final safeguard: if the message field itself contains a JSON envelope or plain-text keys, extract just the inner message text.
+	1. Strip leading/trailing ` ```json ``` ` code fences.
+	2. **Plain-text key-value detection** (`isPlainTextKeyValueFormat`): if stripped text starts with `Message:` and not `{`, route to `extractPlainTextResponse`.
+	3. `extractPlainTextResponse`: section-based parsing for `Message` and `FocusIso3` keys; multi-paragraph messages captured intact.
+	4. **Inline section detection** (`extractInlineCitationsResponse`): handles freeform responses with an inline `Citations:` header — checked before brace extraction. *(Functions retained, citations disabled in active pipeline.)*
+	5. If no plain-text format: find outermost `{…}` braces to isolate JSON.
+	6. `JSON.parse` the slice; on failure fall back to `extractFallbackResponse` (boundary extraction → plain-text → inline section → raw text).
+	7. Post-parse normalization: ensure `message` is a non-empty string, **force `citations: []`** (pipeline disabled), drop `focusIso3` if not exactly 3 chars.
+	8. `stripJsonEnvelope` final safeguard: extract inner message if the field still contains a JSON envelope or protocol keys.
+- **Citation helpers** (`parseLooseCitationObjects`, `extractFallbackCitations`, `extractPlainTextResponse`, `extractInlineCitationsResponse`) — **preserved in `route.ts` for future re-enablement** but not active; `parsed.citations` is always overwritten to `[]` before responding.
+- **`_CitationChip`** component in `ChatMessageBubble.tsx` — **preserved, not rendered**. `ChatCitation` type and `onCitationClick?` prop retained in interfaces for future use.
 - **Input guards**: history capped at 20 messages; individual messages capped at 2,000 characters to prevent token-exhaustion.
-- **`ChatResponse` type** (`lib/chat-types.ts`): `{ message: string; focusIso3?: string; citations: ChatCitation[] }`.
+- **`ChatResponse` type** (`lib/chat-types.ts`): `{ message: string; focusIso3?: string; citations: ChatCitation[] }` — type unchanged; `citations` is always `[]` at runtime until re-enabled.
 
 ## Removed Components
 - **Severity vs Funding scatter chart** (was on overview tab) — removed for clarity.
@@ -97,6 +100,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 - **Spike mode label** (was bottom-left of globe, "Spikes: Funding Gap") — replaced by the labeled switch bar in the bottom-right control group.
 - **Spectrum legend** (was top-left of globe) — removed along with the spectrum toggle UI.
 - **Chat overlay panel** (was `fixed top-0 right-0 bottom-0` full-height slide-in) — replaced by inline embedded split-panel inside the sidebar.
+- **Citation chips** (were clickable `_CitationChip` buttons in `ChatMessageBubble`) — removed from pipeline and UI. System prompt no longer requests citations; `parsed.citations` is always `[]`. All extraction helpers and `_CitationChip` component are preserved (prefixed `_`) for future re-enablement.
 
 ## Near-Term Engineering Priorities
 - Add automated regression tests for key aggregations (especially crisis-country joins and ranking outputs).

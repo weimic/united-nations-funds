@@ -63,7 +63,9 @@ const mdComponents: Components = {
   ),
 };
 
-function CitationChip({
+// _CitationChip is preserved for future re-enablement of the citation pipeline.
+// It is not rendered in the current UI.
+function _CitationChip({
   citation,
   onClick,
 }: {
@@ -87,7 +89,8 @@ function CitationChip({
 
 interface ChatMessageBubbleProps {
   message: ChatMessage;
-  onCitationClick: (citation: ChatCitation) => void;
+  // onCitationClick preserved for future re-enablement; not active in current pipeline
+  onCitationClick?: (citation: ChatCitation) => void;
 }
 
 /**
@@ -169,7 +172,7 @@ function safeBubbleContent(content: string): string {
   return result;
 }
 
-export function ChatMessageBubble({ message, onCitationClick }: ChatMessageBubbleProps) {
+export function ChatMessageBubble({ message }: ChatMessageBubbleProps) {
   const isUser = message.role === "user";
   const displayContent = isUser ? message.content : safeBubbleContent(message.content);
 
@@ -192,18 +195,7 @@ export function ChatMessageBubble({ message, onCitationClick }: ChatMessageBubbl
             </ReactMarkdown>
           </div>
         )}
-
-        {message.citations && message.citations.length > 0 && (
-          <div className="flex flex-wrap gap-1.5 mt-2 pt-2 border-t border-white/10">
-            {message.citations.map((citation, i) => (
-              <CitationChip
-                key={`${citation.iso3}-${citation.crisisId}-${i}`}
-                citation={citation}
-                onClick={() => onCitationClick(citation)}
-              />
-            ))}
-          </div>
-        )}
+        {/* Citation chips disabled — pipeline removed. _CitationChip preserved above for future re-enablement. */}
       </div>
     </div>
   );

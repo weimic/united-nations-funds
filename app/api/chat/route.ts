@@ -155,22 +155,14 @@ INSTRUCTIONS:
 - Answer the user's question based on the context above.
 - When mentioning a specific country, include its ISO3 code in parentheses, e.g. "Sudan (SDN)".
 - If the question is primarily about one country, set "focusIso3" to that country's ISO3 code.
-- In your "citations" array, include every country and crisis you directly referenced:
-  - For countries: type="country", iso3="ISO3_CODE" (3 uppercase letters), crisisId="", label="Country Name"
-  - For crises: type="crisis", iso3="", crisisId="<exact crisis name from context>", label="<exact crisis name from context>"
-  - Use the EXACT crisis name as it appears in the retrieved context for crisisId and label.
-- Do NOT include inline citation markers like [1], [2] in the "message" field. All citations belong only in the "citations" array.
+- Do NOT include inline citation markers like [1], [2] in your response.
 - If the data is insufficient to answer, say so clearly.
 - Use markdown formatting for readability (bold, lists, tables where appropriate).
 
 You MUST respond with valid JSON matching this exact schema:
 {
   "message": "Your markdown-formatted response text.",
-  "focusIso3": "ISO3" or null,
-  "citations": [
-    { "type": "country", "iso3": "ISO3_CODE", "crisisId": "", "label": "Country Name" },
-    { "type": "crisis", "iso3": "", "crisisId": "Exact Crisis Name", "label": "Exact Crisis Name" }
-  ]
+  "focusIso3": "ISO3" or null
 }
 
 Respond ONLY with the JSON object, no other text.`;
@@ -262,6 +254,31 @@ function normalizeLiteralEscapes(s: string): string {
     return s;
   }
   return unescapeJsonString(s);
+}
+
+// ── Citation helpers — reserved for future expansion ─────────────────────────
+// These functions are not active in the current pipeline. They are preserved
+// so citation support can be re-enabled without re-implementing the logic.
+
+/**
+ * Parse individual citation JSON objects that are NOT wrapped in a `[…]`
+ * array. Preserved for future citation expansion.
+ */
+function parseLooseCitationObjects(text: string): ChatResponse["citations"] {
+  const citations: ChatResponse["citations"] = [];
+  const objectPattern = /\{[^{}]*\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = objectPattern.exec(text)) !== null) {
+    try {
+      const obj = JSON.parse(match[0]);
+      if (obj && typeof obj.type === "string" && typeof obj.label === "string") {
+        citations.push(obj);
+      }
+    } catch {
+      // Not valid JSON — skip
+    }
+  }
+  return citations;
 }
 
 /**
@@ -398,7 +415,66 @@ function extractPlainTextResponse(text: string): ChatResponse | null {
         // Citations array wasn't valid JSON
       }
     }
+    // Fall back to loose citation objects (not wrapped in [])
+    if (citations.length === 0) {
+      citations = parseLooseCitationObjects(sections.citations);
+    }
   }
+
+  return { message, focusIso3, citations };
+}
+
+/**
+ * Handle freeform LLM responses that embed a "Citations:" section header
+ * inline within the message body — no `Message:` key, no JSON envelope.
+ *
+ * Example:
+ *   Yemen is heavily affected by various crises…
+ *
+ *   Citations:
+ *   { "type": "country", "iso3": "YEM", … }
+ *   { "type": "crisis", … }
+ *
+ *   Note: Some trailing text.
+ *
+ * The text is split at the `Citations:` header.  Everything before becomes
+ * the message; citation objects after the header are parsed (bracket-wrapped
+ * array first, then loose `{…}` objects as fallback).
+ */
+function extractInlineCitationsResponse(text: string): ChatResponse | null {
+  const citHeaderMatch = text.match(/(?:^|\n)\s*Citations\s*:\s*/im);
+  if (!citHeaderMatch || citHeaderMatch.index === undefined) return null;
+
+  const message = text.slice(0, citHeaderMatch.index).trim();
+  if (!message) return null;
+
+  const afterCitations = text.slice(
+    citHeaderMatch.index + citHeaderMatch[0].length,
+  );
+
+  // Try bracket-wrapped array first, then fall back to loose objects
+  let citations: ChatResponse["citations"] = [];
+  const bracketMatch = afterCitations.match(/\[[\s\S]*\]/);
+  if (bracketMatch) {
+    try {
+      const arr = JSON.parse(bracketMatch[0]);
+      if (Array.isArray(arr)) citations = arr;
+    } catch {
+      /* fall through to loose objects */
+    }
+  }
+  if (citations.length === 0) {
+    citations = parseLooseCitationObjects(afterCitations);
+  }
+
+  // Only return if we actually extracted citations — otherwise the
+  // "Citations:" header might be conversational text, not structure.
+  if (citations.length === 0) return null;
+
+  // Extract focusIso3 if present anywhere in the text
+  let focusIso3: string | undefined;
+  const focusMatch = text.match(/\bFocusIso3\s*:\s*([A-Z]{3})/i);
+  if (focusMatch) focusIso3 = focusMatch[1].toUpperCase();
 
   return { message, focusIso3, citations };
 }
@@ -422,6 +498,10 @@ function extractFallbackResponse(text: string): ChatResponse {
   // Strategy 2: Plain-text key-value format (Message: ..., FocusIso3: ..., Citations: ...)
   const plainText = extractPlainTextResponse(text);
   if (plainText) return plainText;
+
+  // Strategy 3: Freeform text with inline "Citations:" section header
+  const inlineCit = extractInlineCitationsResponse(text);
+  if (inlineCit) return inlineCit;
 
   // No recognizable format — return text as-is
   return { message: text, citations: [] };
@@ -454,6 +534,10 @@ function stripJsonEnvelope(message: string): string {
     const pt = extractPlainTextResponse(trimmed);
     if (pt) return pt.message;
   }
+
+  // Freeform text with inline "Citations:" section — strip citations from display
+  const inlineCit = extractInlineCitationsResponse(trimmed);
+  if (inlineCit) return inlineCit.message;
 
   return normalizeLiteralEscapes(message);
 }
@@ -505,7 +589,7 @@ export async function POST(req: NextRequest) {
 
     let parsed: ChatResponse;
 
-    // Strategy 1: Plain-text key-value format — must be tried first.
+    // Strategy 1: Plain-text key-value format (Message: … FocusIso3: … Citations: …)
     const plainTextResult = isPlainTextKeyValueFormat(stripped)
       ? extractPlainTextResponse(stripped)
       : null;
@@ -513,19 +597,28 @@ export async function POST(req: NextRequest) {
     if (plainTextResult) {
       parsed = plainTextResult;
     } else {
-      // Strategy 2: JSON object extraction (outermost { … } block)
-      const firstBrace = stripped.indexOf("{");
-      const lastBrace = stripped.lastIndexOf("}");
-      const jsonStr =
-        firstBrace !== -1 && lastBrace > firstBrace
-          ? stripped.slice(firstBrace, lastBrace + 1)
-          : stripped;
+      // Strategy 2: Freeform text with inline "Citations:" section header.
+      // Must be checked before brace extraction — the `{` inside citation
+      // objects would otherwise be mistaken for a JSON envelope.
+      const inlineCitResult = extractInlineCitationsResponse(stripped);
 
-      try {
-        parsed = JSON.parse(jsonStr) as ChatResponse;
-      } catch {
-        // JSON.parse failed — try boundary / regex rescue before giving up.
-        parsed = extractFallbackResponse(stripped || responseText);
+      if (inlineCitResult) {
+        parsed = inlineCitResult;
+      } else {
+        // Strategy 3: JSON object extraction (outermost { … } block)
+        const firstBrace = stripped.indexOf("{");
+        const lastBrace = stripped.lastIndexOf("}");
+        const jsonStr =
+          firstBrace !== -1 && lastBrace > firstBrace
+            ? stripped.slice(firstBrace, lastBrace + 1)
+            : stripped;
+
+        try {
+          parsed = JSON.parse(jsonStr) as ChatResponse;
+        } catch {
+          // JSON.parse failed — try boundary / regex rescue before giving up.
+          parsed = extractFallbackResponse(stripped || responseText);
+        }
       }
     }
 
@@ -537,9 +630,9 @@ export async function POST(req: NextRequest) {
           ? raw.text
           : stripped || responseText;
     }
-    if (!Array.isArray(parsed.citations)) {
-      parsed.citations = [];
-    }
+    // Citations are disabled in the active pipeline — always return empty array.
+    // The citation helpers above remain available for future re-enablement.
+    parsed.citations = [];
     // Sanitise focusIso3: must be a 3-char string or omitted
     if (
       typeof parsed.focusIso3 !== "string" ||

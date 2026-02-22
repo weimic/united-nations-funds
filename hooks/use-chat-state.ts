@@ -137,7 +137,7 @@ export function useChatState() {
           id: crypto.randomUUID(),
           role: "assistant",
           content: sanitizeMessageContent(data.message),
-          citations: data.citations,
+          // citations omitted — citation pipeline disabled; preserved in types for future re-enablement
           focusIso3: data.focusIso3,
         };
 
