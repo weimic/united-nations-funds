@@ -17,6 +17,9 @@ export function CountriesTab() {
     selectedCountryIso3,
     getCountry,
     setGlobeFocusIso3,
+    countryDetailSource,
+    setCountryDetailSource,
+    setSidebarTab,
   } = useAppContext();
 
   const [search, setSearch] = useState("");
@@ -137,7 +140,17 @@ export function CountriesTab() {
     const country = getCountry(selectedCountryIso3);
     if (country) {
       return (
-        <CountryDetail iso3={selectedCountryIso3} onBack={() => setSelectedCountryIso3(null)} />
+        <CountryDetail
+          iso3={selectedCountryIso3}
+          onBack={() => {
+            const source = countryDetailSource;
+            setSelectedCountryIso3(null);
+            setCountryDetailSource(null);
+            if (source && source !== "countries") {
+              setSidebarTab(source as "crises" | "countries" | "overview");
+            }
+          }}
+        />
       );
     }
   }

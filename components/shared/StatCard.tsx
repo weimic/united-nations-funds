@@ -1,6 +1,5 @@
 "use client";
 
-import type { ReactNode } from "react";
 import { HoverTip } from "./HoverTip";
 
 /** Small stat card used across overview and detail views. */

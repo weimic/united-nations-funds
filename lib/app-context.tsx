@@ -38,6 +38,12 @@ interface AppContextType {
   activeCrisisCountryCodes: Set<string>;
   /** All crises that include a given country, with their entry */
   getAllCrisesForCountry: (iso3: string) => Array<{ crisis: CrisisData; entry: CrisisCountryEntry }>;
+  /** Where the current crisis detail navigation originated from (e.g. "overview") */
+  navigationSource: string | null;
+  setNavigationSource: (source: string | null) => void;
+  /** Where the current country detail navigation originated from (e.g. "overview", "crises") */
+  countryDetailSource: string | null;
+  setCountryDetailSource: (source: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -57,6 +63,8 @@ export function AppProvider({
   const [spikeMode, setSpikeMode] = useState<"fundingGap" | "severity">("fundingGap");
   const [mapStyle, setMapStyle] = useState<"dots" | "solid">("dots");
   const [spikeColorMode, setSpikeColorMode] = useState<"default" | "spectrum">("default");
+  const [navigationSource, setNavigationSource] = useState<string | null>(null);
+  const [countryDetailSource, setCountryDetailSource] = useState<string | null>(null);
 
   const activeCrisisCountryCodes = useMemo(
     () => new Set(activeCrisis?.countries.map((c) => c.iso3) ?? []),
@@ -114,6 +122,10 @@ export function AppProvider({
         getCountry,
         activeCrisisCountryCodes,
         getAllCrisesForCountry,
+        navigationSource,
+        setNavigationSource,
+        countryDetailSource,
+        setCountryDetailSource,
       }}
     >
       {children}

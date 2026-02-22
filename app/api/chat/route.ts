@@ -1,0 +1,667 @@
+import { NextRequest, NextResponse } from "next/server";
+import { ChatOpenAI } from "@langchain/openai";
+import { HuggingFaceInference } from "@langchain/community/llms/hf";
+import { RunnableSequence, RunnableLambda } from "@langchain/core/runnables";
+import { StringOutputParser } from "@langchain/core/output_parsers";
+import {
+  SystemMessage,
+  HumanMessage,
+  AIMessage,
+  AIMessageChunk,
+  BaseMessage,
+} from "@langchain/core/messages";
+import type { Document } from "@langchain/core/documents";
+import { getVectorStore } from "@/vector-store";
+import type { ChatResponse } from "@/lib/chat-types";
+
+// ── Types ──────────────────────────────────────────────────────────────────────
+
+type MessageInput = { role: "user" | "assistant"; content: string };
+
+interface RetrievalInput {
+  messages: MessageInput[];
+  docs: Document[];
+}
+
+// ── Input guards ───────────────────────────────────────────────────────────────
+
+/** Maximum number of messages retained from the conversation history. */
+const MAX_HISTORY_MESSAGES = 20; // 10 user+assistant pairs
+/** Maximum characters accepted per message (prevents token-exhaustion attacks). */
+const MAX_CONTENT_LENGTH = 2_000;
+
+// ── LLM Providers — lazy singletons ───────────────────────────────────────────
+//
+// LLMs are initialised on first use rather than at module load time so that:
+//   1. Missing env vars produce a clear Error instead of silently baking in
+//      an empty-string API key that fails with a cryptic 401 later.
+//   2. Serverless cold starts don't allocate objects this route never uses.
+
+let _primaryLlm: ChatOpenAI | null = null;
+let _hfTextLlm: HuggingFaceInference | null = null;
+let _fallbackLlm: RunnableLambda<BaseMessage[], AIMessageChunk> | null = null;
+let _ragChain: RunnableSequence<{ messages: MessageInput[] }, string> | null = null;
+
+/**
+ * Primary LLM: Llama 3 via OpenRouter.
+ * ChatOpenAI is used with a custom baseURL so the same LCEL interface works
+ * unchanged — only the routing layer differs.
+ */
+function getPrimaryLlm(): ChatOpenAI {
+  if (!_primaryLlm) {
+    const apiKey = process.env.OPENROUTER_API_KEY;
+    if (!apiKey) throw new Error("Missing env var: OPENROUTER_API_KEY");
+    _primaryLlm = new ChatOpenAI({
+      model: "meta-llama/llama-3-8b-instruct",
+      temperature: 0.3,
+      maxTokens: 1024,
+      configuration: {
+        baseURL: "https://openrouter.ai/api/v1",
+        apiKey,
+        defaultHeaders: {
+          "HTTP-Referer": "https://un-crisis-monitor.vercel.app",
+          "X-Title": "UN Crisis Monitor",
+        },
+      },
+    });
+  }
+  return _primaryLlm;
+}
+
+/**
+ * Serialise a `BaseMessage[]` into a Mistral v0.3 instruct prompt string.
+ *
+ * Mistral format: the system message must be merged into the first [INST] block
+ * alongside the first user turn — it cannot stand alone as its own [INST].
+ *
+ *   <s>[INST] {system}\n\n{user_1} [/INST] {assistant_1}</s>
+ *   <s>[INST] {user_2} [/INST] {assistant_2}</s> …
+ */
+function messagesToMistralPrompt(messages: BaseMessage[]): string {
+  const systemMsg = messages.find((m) => m instanceof SystemMessage);
+  const systemContent = systemMsg ? String(systemMsg.content) : "";
+  const turns = messages.filter((m) => !(m instanceof SystemMessage));
+
+  const parts: string[] = [];
+  let firstUser = true;
+
+  for (const msg of turns) {
+    if (msg instanceof HumanMessage) {
+      const userContent = String(msg.content);
+      const content =
+        firstUser && systemContent
+          ? `${systemContent}\n\n${userContent}`
+          : userContent;
+      parts.push(`<s>[INST] ${content} [/INST]`);
+      firstUser = false;
+    } else {
+      // AIMessage or other — assistant turn closes the exchange
+      parts.push(` ${String(msg.content)}</s>`);
+    }
+  }
+
+  return parts.join("").trim();
+}
+
+/**
+ * Fallback LLM: Mistral-7B via HuggingFace Inference API.
+ *
+ * @langchain/community@1.1.17 ships `HuggingFaceInference` as a text LLM
+ * (string in → string out).  We wrap it in a `RunnableLambda` that accepts
+ * `BaseMessage[]` and returns an `AIMessageChunk` so the Runnable signature is
+ * identical to `ChatOpenAI` — a requirement for `.withFallbacks()`.
+ */
+function getFallbackLlm(): RunnableLambda<BaseMessage[], AIMessageChunk> {
+  if (!_fallbackLlm) {
+    const apiKey = process.env.HF_TOKEN;
+    if (!apiKey) throw new Error("Missing env var: HF_TOKEN");
+    if (!_hfTextLlm) {
+      _hfTextLlm = new HuggingFaceInference({
+        model: "mistralai/Mistral-7B-Instruct-v0.3",
+        apiKey,
+        temperature: 0.3,
+        maxTokens: 1024,
+        // api-inference.huggingface.co was decommissioned (HTTP 410).
+        // endpointUrl causes _prepareHFInference() to call hfi.endpoint(url),
+        // routing directly through the new HF router model URL.
+        endpointUrl: "https://router.huggingface.co/hf-inference/models/mistralai/Mistral-7B-Instruct-v0.3",
+      });
+    }
+    const hfTextLlm = _hfTextLlm;
+    _fallbackLlm = new RunnableLambda({
+      func: async (messages: BaseMessage[]): Promise<AIMessageChunk> => {
+        const prompt = messagesToMistralPrompt(messages);
+        const text = await hfTextLlm.invoke(prompt);
+        return new AIMessageChunk({ content: text });
+      },
+    });
+  }
+  return _fallbackLlm;
+}
+
+// ── System Prompt ──────────────────────────────────────────────────────────────
+
+function buildSystemPrompt(docs: Document[]): string {
+  const context = docs
+    .map((doc, i) => `[${i + 1}] ${doc.pageContent}`)
+    .join("\n");
+
+  return `You are the UN Crisis Monitor AI assistant. You analyze humanitarian funding data, INFORM severity indices, and CBPF (Country-Based Pooled Fund) allocations for 2025.
+
+RETRIEVED CONTEXT:
+${context}
+
+INSTRUCTIONS:
+- Answer the user's question based on the context above.
+- When mentioning a specific country, include its ISO3 code in parentheses, e.g. "Sudan (SDN)".
+- If the question is primarily about one country, set "focusIso3" to that country's ISO3 code.
+- Do NOT include inline citation markers like [1], [2] in your response.
+- If the data is insufficient to answer, say so clearly.
+- Use markdown formatting for readability (bold, lists, tables where appropriate).
+
+You MUST respond with valid JSON matching this exact schema:
+{
+  "message": "Your markdown-formatted response text.",
+  "focusIso3": "ISO3" or null
+}
+
+Respond ONLY with the JSON object, no other text.`;
+}
+
+// ── LCEL Retrieval Chain — lazy singleton ─────────────────────────────────────
+
+/**
+ * Returns (and caches) the full LCEL RAG pipeline:
+ *   1. Retrieve top-K documents from PineconeStore using the last user message.
+ *   2. Build [SystemMessage, ...history] with the retrieved context injected.
+ *   3. Invoke the LLM fallback chain (OpenRouter/Llama-3 → HF/Mistral-7B).
+ *   4. Extract the raw string from the AIMessage output.
+ *
+ * Built lazily so env vars are validated on first request, not at module load.
+ */
+function getRagChain(): RunnableSequence<{ messages: MessageInput[] }, string> {
+  if (!_ragChain) {
+    const llmWithFallback = getPrimaryLlm().withFallbacks({
+      fallbacks: [getFallbackLlm()],
+    });
+
+    _ragChain = RunnableSequence.from<{ messages: MessageInput[] }, string>([
+      // Step 1 — Retrieve context from PineconeStore
+      new RunnableLambda({
+        func: async (input: { messages: MessageInput[] }): Promise<RetrievalInput> => {
+          const lastUserMsg = [...input.messages]
+            .reverse()
+            .find((m) => m.role === "user");
+          if (!lastUserMsg) throw new Error("No user message found in chain");
+
+          const store = await getVectorStore();
+          const retriever = store.asRetriever({ k: 8 });
+          const docs = await retriever.invoke(lastUserMsg.content);
+
+          return { messages: input.messages, docs };
+        },
+      }),
+
+      // Step 2 — Format messages: system prompt + conversation history
+      new RunnableLambda({
+        func: (input: RetrievalInput): BaseMessage[] => {
+          const systemMsg = new SystemMessage(buildSystemPrompt(input.docs));
+          const history = input.messages.map((m) =>
+            m.role === "user" ? new HumanMessage(m.content) : new AIMessage(m.content)
+          );
+          return [systemMsg, ...history];
+        },
+      }),
+
+      // Step 3 — Primary (OpenRouter/Llama-3) with automatic HF/Mistral fallback
+      llmWithFallback,
+
+      // Step 4 — Pull the text string out of the AIMessage
+      new StringOutputParser(),
+    ]);
+  }
+  return _ragChain;
+}
+
+// ── Response sanitisation helpers ──────────────────────────────────────────────
+
+/**
+ * Manually unescape JSON string escape sequences for the case where
+ * JSON.parse fails on the captured regex group (e.g. unbalanced quotes).
+ * Handles: \n \t \r \" \\ \/ \b \f
+ */
+function unescapeJsonString(s: string): string {
+  return s
+    .replace(/\\n/g, "\n")
+    .replace(/\\t/g, "\t")
+    .replace(/\\r/g, "\r")
+    .replace(/\\b/g, "\b")
+    .replace(/\\f/g, "\f")
+    .replace(/\\\//g, "/")
+    .replace(/\\'/g, "'")
+    .replace(/\\"/g, '"')
+    .replace(/\\\\/g, "\\");
+}
+
+/**
+ * Detect and convert literal two-char escape sequences (\n, \t, \r) that
+ * slipped through as raw text rather than being interpreted by JSON.parse.
+ * Only applies when the string actually contains these sequences — avoids
+ * touching content that is already correctly formatted.
+ */
+function normalizeLiteralEscapes(s: string): string {
+  if (!s.includes("\\n") && !s.includes("\\t") && !s.includes("\\r")) {
+    return s;
+  }
+  return unescapeJsonString(s);
+}
+
+// ── Citation helpers — reserved for future expansion ─────────────────────────
+// These functions are not active in the current pipeline. They are preserved
+// so citation support can be re-enabled without re-implementing the logic.
+
+/**
+ * Parse individual citation JSON objects that are NOT wrapped in a `[…]`
+ * array. Preserved for future citation expansion.
+ */
+function parseLooseCitationObjects(text: string): ChatResponse["citations"] {
+  const citations: ChatResponse["citations"] = [];
+  const objectPattern = /\{[^{}]*\}/g;
+  let match: RegExpExecArray | null;
+  while ((match = objectPattern.exec(text)) !== null) {
+    try {
+      const obj = JSON.parse(match[0]);
+      if (obj && typeof obj.type === "string" && typeof obj.label === "string") {
+        citations.push(obj);
+      }
+    } catch {
+      // Not valid JSON — skip
+    }
+  }
+  return citations;
+}
+
+/**
+ * Try to rescue citations from the raw text via regex when JSON.parse failed.
+ */
+function extractFallbackCitations(text: string): ChatResponse["citations"] {
+  const citMatch = text.match(/"citations"\s*:\s*(\[[\s\S]*\])/);
+  if (!citMatch) return [];
+  try {
+    const arr = JSON.parse(citMatch[1]);
+    if (Array.isArray(arr)) return arr;
+  } catch {
+    // citations array wasn't valid JSON either
+  }
+  return [];
+}
+
+/**
+ * Boundary-based message extraction: find the raw value between `"message":`
+ * and the next known JSON key (`"focusIso3"`, `"citations"`) or closing `}`.
+ *
+ * This handles three LLM failure modes that break JSON.parse:
+ *   1. Properly quoted value with unescaped internal quotes (truncates regex)
+ *   2. Completely unquoted value (no quotes at all)
+ *   3. Malformed escaping (e.g. single-backslash before non-escape chars)
+ *
+ * Once the raw slice is isolated, if it's wrapped in quotes we attempt
+ * JSON.parse for proper unescaping, then fall back to manual unescaping.
+ */
+function extractMessageByBoundary(text: string): string | null {
+  const keyMatch = text.match(/"message"\s*:\s*/);
+  if (!keyMatch || keyMatch.index === undefined) return null;
+
+  const valueStart = keyMatch.index + keyMatch[0].length;
+  const remainder = text.slice(valueStart);
+
+  // Find the boundary: ,"focusIso3" or ,"citations" (with flexible whitespace)
+  const boundaryMatch = remainder.match(/,\s*"(?:focusIso3|citations)"\s*:/);
+  let rawValue: string;
+  if (boundaryMatch && boundaryMatch.index !== undefined) {
+    rawValue = remainder.slice(0, boundaryMatch.index);
+  } else {
+    // No next key found — take everything up to the last closing brace
+    const closingBrace = remainder.lastIndexOf("}");
+    rawValue = closingBrace !== -1 ? remainder.slice(0, closingBrace) : remainder;
+  }
+
+  rawValue = rawValue.trim();
+  // Strip trailing comma left over from the JSON structure
+  rawValue = rawValue.replace(/,\s*$/, "");
+
+  // If the value is wrapped in quotes, try JSON string parse for proper unescaping
+  if (rawValue.startsWith('"')) {
+    // Find the actual closing quote (the last `"` in the raw value)
+    const lastQuote = rawValue.lastIndexOf('"');
+    if (lastQuote > 0) {
+      const jsonCandidate = rawValue.slice(0, lastQuote + 1);
+      try {
+        return JSON.parse(jsonCandidate) as string;
+      } catch {
+        // Unescaped internal quotes — strip outer quotes and manually unescape
+        return unescapeJsonString(rawValue.slice(1, lastQuote));
+      }
+    }
+  }
+
+  // Unquoted value — use as-is
+  return rawValue;
+}
+
+/**
+ * Quick heuristic: does the text look like the plain-text key-value format
+ * ("Message: ...\nFocusIso3: ...\nCitations: [...]") rather than a JSON
+ * object?  Used to short-circuit the firstBrace/lastBrace extraction that
+ * otherwise mistakes the `{` inside the Citations array for a JSON envelope.
+ */
+function isPlainTextKeyValueFormat(text: string): boolean {
+  return /^Message\s*:/im.test(text) && !text.trimStart().startsWith("{");
+}
+
+/**
+ * Parse plain-text key-value format that some LLMs produce instead of JSON.
+ *
+ * Uses section-based parsing — locating every known top-level key at the
+ * start of a line and slicing between them — so multi-line message bodies
+ * are captured correctly.  The previous regex approach with `$` in a
+ * `m`-flag lookahead would terminate the capture at the first line-end,
+ * truncating multi-paragraph messages.
+ *
+ * Recognised keys (case-insensitive): Message, FocusIso3, Citations.
+ *
+ *   Message: Venezuela is trapped in a profound...
+ *   Multi-line paragraph content is preserved.
+ *
+ *   FocusIso3: VEN
+ *
+ *   Citations: [ { "type": "country", ... } ]
+ */
+function extractPlainTextResponse(text: string): ChatResponse | null {
+  const keyPattern = /^(Message|FocusIso3|Citations)\s*:\s*/gim;
+  const keys: { key: string; valueStart: number; index: number }[] = [];
+  let m: RegExpExecArray | null;
+  while ((m = keyPattern.exec(text)) !== null) {
+    keys.push({ key: m[1].toLowerCase(), valueStart: m.index + m[0].length, index: m.index });
+  }
+
+  if (!keys.some((k) => k.key === "message")) return null;
+
+  // Build key → raw-value map (each value runs from after the colon to the
+  // start of the next key, or end-of-string for the last key).
+  const sections: Record<string, string> = {};
+  for (let i = 0; i < keys.length; i++) {
+    const valueEnd = i + 1 < keys.length ? keys[i + 1].index : text.length;
+    sections[keys[i].key] = text.slice(keys[i].valueStart, valueEnd).trim();
+  }
+
+  const message = sections.message;
+  if (!message) return null;
+
+  let focusIso3: string | undefined;
+  if (sections.focusiso3) {
+    const fm = sections.focusiso3.match(/^([A-Z]{3})/i);
+    if (fm) focusIso3 = fm[1].toUpperCase();
+  }
+
+  let citations: ChatResponse["citations"] = [];
+  if (sections.citations) {
+    const bracketMatch = sections.citations.match(/\[[\s\S]*\]/);
+    if (bracketMatch) {
+      try {
+        const arr = JSON.parse(bracketMatch[0]);
+        if (Array.isArray(arr)) citations = arr;
+      } catch {
+        // Citations array wasn't valid JSON
+      }
+    }
+    // Fall back to loose citation objects (not wrapped in [])
+    if (citations.length === 0) {
+      citations = parseLooseCitationObjects(sections.citations);
+    }
+  }
+
+  return { message, focusIso3, citations };
+}
+
+/**
+ * Handle freeform LLM responses that embed a "Citations:" section header
+ * inline within the message body — no `Message:` key, no JSON envelope.
+ *
+ * Example:
+ *   Yemen is heavily affected by various crises…
+ *
+ *   Citations:
+ *   { "type": "country", "iso3": "YEM", … }
+ *   { "type": "crisis", … }
+ *
+ *   Note: Some trailing text.
+ *
+ * The text is split at the `Citations:` header.  Everything before becomes
+ * the message; citation objects after the header are parsed (bracket-wrapped
+ * array first, then loose `{…}` objects as fallback).
+ */
+function extractInlineCitationsResponse(text: string): ChatResponse | null {
+  const citHeaderMatch = text.match(/(?:^|\n)\s*Citations\s*:\s*/im);
+  if (!citHeaderMatch || citHeaderMatch.index === undefined) return null;
+
+  const message = text.slice(0, citHeaderMatch.index).trim();
+  if (!message) return null;
+
+  const afterCitations = text.slice(
+    citHeaderMatch.index + citHeaderMatch[0].length,
+  );
+
+  // Try bracket-wrapped array first, then fall back to loose objects
+  let citations: ChatResponse["citations"] = [];
+  const bracketMatch = afterCitations.match(/\[[\s\S]*\]/);
+  if (bracketMatch) {
+    try {
+      const arr = JSON.parse(bracketMatch[0]);
+      if (Array.isArray(arr)) citations = arr;
+    } catch {
+      /* fall through to loose objects */
+    }
+  }
+  if (citations.length === 0) {
+    citations = parseLooseCitationObjects(afterCitations);
+  }
+
+  // Only return if we actually extracted citations — otherwise the
+  // "Citations:" header might be conversational text, not structure.
+  if (citations.length === 0) return null;
+
+  // Extract focusIso3 if present anywhere in the text
+  let focusIso3: string | undefined;
+  const focusMatch = text.match(/\bFocusIso3\s*:\s*([A-Z]{3})/i);
+  if (focusMatch) focusIso3 = focusMatch[1].toUpperCase();
+
+  return { message, focusIso3, citations };
+}
+
+/**
+ * When JSON.parse fails on the full response, attempt to rescue the "message"
+ * and "focusIso3" values via regex so we never surface the raw JSON envelope
+ * to the user, and country focus is preserved even in the fallback path.
+ */
+function extractFallbackResponse(text: string): ChatResponse {
+  // Strategy 1: JSON-shaped — quoted or unquoted "message" key with boundary extraction
+  let focusIso3: string | undefined;
+  const focusMatch = text.match(/"focusIso3"\s*:\s*"([A-Z]{3})"/i);
+  if (focusMatch) focusIso3 = focusMatch[1].toUpperCase();
+
+  const message = extractMessageByBoundary(text);
+  if (message) {
+    return { message, citations: extractFallbackCitations(text), focusIso3 };
+  }
+
+  // Strategy 2: Plain-text key-value format (Message: ..., FocusIso3: ..., Citations: ...)
+  const plainText = extractPlainTextResponse(text);
+  if (plainText) return plainText;
+
+  // Strategy 3: Freeform text with inline "Citations:" section header
+  const inlineCit = extractInlineCitationsResponse(text);
+  if (inlineCit) return inlineCit;
+
+  // No recognizable format — return text as-is
+  return { message: text, citations: [] };
+}
+
+/**
+ * Final safeguard: if the message string still looks like it contains the raw
+ * JSON response envelope (`{ "message": "...", ... }`), extract just the inner
+ * message value.  This prevents the user from ever seeing protocol-level JSON.
+ * Also normalises any literal \n sequences that survived the JSON parse path.
+ */
+function stripJsonEnvelope(message: string): string {
+  const trimmed = message.trim();
+
+  // JSON object envelope
+  if (trimmed.startsWith("{") && trimmed.includes('"message"')) {
+    try {
+      const obj = JSON.parse(trimmed) as Record<string, unknown>;
+      if (typeof obj.message === "string" && obj.message) {
+        return obj.message;
+      }
+    } catch {
+      const extracted = extractMessageByBoundary(trimmed);
+      if (extracted) return extracted;
+    }
+  }
+
+  // Plain-text key-value format (Message: ... FocusIso3: ... Citations: ...)
+  if (/^Message\s*:/im.test(trimmed)) {
+    const pt = extractPlainTextResponse(trimmed);
+    if (pt) return pt.message;
+  }
+
+  // Freeform text with inline "Citations:" section — strip citations from display
+  const inlineCit = extractInlineCitationsResponse(trimmed);
+  if (inlineCit) return inlineCit.message;
+
+  return normalizeLiteralEscapes(message);
+}
+
+// ── Route Handler ──────────────────────────────────────────────────────────────
+
+export async function POST(req: NextRequest) {
+  try {
+    const body = await req.json();
+
+    // ── Input validation & sanitisation ───────────────────────────────────────
+    const rawMessages: MessageInput[] = Array.isArray(body.messages)
+      ? body.messages
+      : [];
+
+    if (!rawMessages.length) {
+      return NextResponse.json({ error: "No messages provided" }, { status: 400 });
+    }
+
+    // Truncate history to the last N messages and cap per-message content length
+    const messages: MessageInput[] = rawMessages
+      .slice(-MAX_HISTORY_MESSAGES)
+      .map((m) => ({
+        role: m.role === "assistant" ? "assistant" : "user",
+        content: String(m.content ?? "").slice(0, MAX_CONTENT_LENGTH),
+      }));
+
+    const lastUserMsg = messages.slice().reverse().find((m) => m.role === "user");
+    if (!lastUserMsg) {
+      return NextResponse.json({ error: "No user message found" }, { status: 400 });
+    }
+
+    // Invoke the LCEL chain — returns the raw LLM text string
+    const responseText = await getRagChain().invoke({ messages });
+
+    // ── Robust response extraction ──────────────────────────────────────────────
+    // LLMs answer in one of two shapes:
+    //   A. A JSON object (possibly wrapped in ```json fences / preamble prose).
+    //   B. Plain-text key-value pairs:  Message: …  FocusIso3: …  Citations: […]
+    //
+    // Shape B must be detected *before* the brace-based JSON extraction,
+    // because the `{` inside the Citations array would otherwise be mistaken
+    // for the opening brace of a JSON envelope, producing a garbage slice.
+
+    const stripped = responseText
+      .replace(/^```(?:json)?\s*/im, "")
+      .replace(/\s*```\s*$/im, "")
+      .trim();
+
+    let parsed: ChatResponse;
+
+    // Strategy 1: Plain-text key-value format (Message: … FocusIso3: … Citations: …)
+    const plainTextResult = isPlainTextKeyValueFormat(stripped)
+      ? extractPlainTextResponse(stripped)
+      : null;
+
+    if (plainTextResult) {
+      parsed = plainTextResult;
+    } else {
+      // Strategy 2: Freeform text with inline "Citations:" section header.
+      // Must be checked before brace extraction — the `{` inside citation
+      // objects would otherwise be mistaken for a JSON envelope.
+      const inlineCitResult = extractInlineCitationsResponse(stripped);
+
+      if (inlineCitResult) {
+        parsed = inlineCitResult;
+      } else {
+        // Strategy 3: JSON object extraction (outermost { … } block)
+        const firstBrace = stripped.indexOf("{");
+        const lastBrace = stripped.lastIndexOf("}");
+        const jsonStr =
+          firstBrace !== -1 && lastBrace > firstBrace
+            ? stripped.slice(firstBrace, lastBrace + 1)
+            : stripped;
+
+        try {
+          parsed = JSON.parse(jsonStr) as ChatResponse;
+        } catch {
+          // JSON.parse failed — try boundary / regex rescue before giving up.
+          parsed = extractFallbackResponse(stripped || responseText);
+        }
+      }
+    }
+
+    // Defensive normalisation — ensure required fields are present and typed
+    if (typeof parsed.message !== "string" || !parsed.message) {
+      const raw = (parsed as unknown as Record<string, unknown>);
+      parsed.message =
+        typeof raw.text === "string"
+          ? raw.text
+          : stripped || responseText;
+    }
+    // Citations are disabled in the active pipeline — always return empty array.
+    // The citation helpers above remain available for future re-enablement.
+    parsed.citations = [];
+    // Sanitise focusIso3: must be a 3-char string or omitted
+    if (
+      typeof parsed.focusIso3 !== "string" ||
+      parsed.focusIso3.length !== 3
+    ) {
+      parsed.focusIso3 = undefined;
+    }
+
+    // Final safeguard: if `message` still looks like a raw JSON object (i.e. it
+    // contains the wrapper schema keys), extract just the inner message value so
+    // the user never sees the raw protocol envelope.
+    parsed.message = stripJsonEnvelope(parsed.message);
+
+    return NextResponse.json(parsed);
+  } catch (err: unknown) {
+    const status = (err as { status?: number }).status;
+
+    if (status === 429) {
+      return NextResponse.json(
+        { error: "API_LIMIT_REACHED", message: "Rate limit reached. Please try again later." },
+        { status: 429 }
+      );
+    }
+
+    console.error("Chat API error:", err);
+    return NextResponse.json(
+      { error: "INTERNAL_ERROR", message: "An unexpected error occurred." },
+      { status: 500 }
+    );
+  }
+}
+

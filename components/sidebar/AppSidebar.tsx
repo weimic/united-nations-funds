@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState, useCallback } from "react";
 import { useAppContext } from "@/lib/app-context";
 import {
   Sidebar,
@@ -13,9 +14,65 @@ import { Globe2, AlertTriangle, MapPin } from "lucide-react";
 import { OverviewTab } from "./OverviewTab";
 import { CrisesTab } from "./CrisesTab";
 import { CountriesTab } from "./CountriesTab";
+import { ChatWindow } from "@/components/chat/ChatWindow";
+import { ChatToggleButton } from "@/components/chat/ChatToggleButton";
 
-export default function AppSidebar() {
-  const { sidebarTab, setSidebarTab } = useAppContext();
+interface AppSidebarProps {
+  chatOpen: boolean;
+  onChatToggle: () => void;
+}
+
+export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) {
+  const { sidebarTab, setSidebarTab, setNavigationSource, setCountryDetailSource } = useAppContext();
+
+  const [chatHeightPx, setChatHeightPx] = useState<number | null>(null);
+  const [chatFullscreen, setChatFullscreen] = useState(false);
+  const sidebarContentRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef<number | null>(null);
+  const dragStartHeight = useRef<number>(0);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const container = sidebarContentRef.current;
+    if (!container) return;
+    dragStartY.current = e.clientY;
+    dragStartHeight.current = chatHeightPx ?? container.clientHeight * 0.5;
+
+    let rafId: number | null = null;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (dragStartY.current === null) return;
+      // Throttle to one state update per animation frame to prevent
+      // rapid-fire re-renders that push Recharts ResizeObserver into an
+      // infinite setState loop (maximum update depth exceeded).
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (dragStartY.current === null) return;
+        const delta = dragStartY.current - ev.clientY;
+        const containerH = sidebarContentRef.current?.clientHeight ?? container.clientHeight;
+        const newHeight = Math.max(80, Math.min(containerH - 60, dragStartHeight.current + delta));
+        setChatHeightPx(newHeight);
+      });
+    };
+
+    const onMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
+      dragStartY.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [chatHeightPx]);
+
+  const handleToggleFullscreen = useCallback(() => {
+    setChatFullscreen(prev => !prev);
+  }, []);
 
   return (
     <Sidebar
@@ -49,12 +106,28 @@ export default function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="relative z-10 p-0 overflow-hidden flex flex-col">
-        <div className="group-data-[collapsible=icon]:hidden flex flex-col flex-1 min-h-0 px-2 pb-2">
+        <div ref={sidebarContentRef} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Stats / tabs — takes remaining space; hidden in fullscreen chat mode */}
+        <div
+          className="group-data-[collapsible=icon]:hidden flex flex-col min-h-0 px-2 pb-2 overflow-hidden"
+          style={{
+            flex: chatOpen
+              ? chatFullscreen
+                ? "0 0 0px"
+                : chatHeightPx
+                  ? `0 0 calc(100% - ${chatHeightPx}px)`
+                  : "0 0 50%"
+              : "1 1 0%",
+          }}
+        >
           <Tabs
             value={sidebarTab}
-            onValueChange={(v) =>
-              setSidebarTab(v as "crises" | "countries" | "overview")
-            }
+            onValueChange={(v) => {
+              setSidebarTab(v as "crises" | "countries" | "overview");
+              // Clear navigation sources when manually switching tabs
+              setNavigationSource(null);
+              setCountryDetailSource(null);
+            }}
             className="flex flex-col flex-1 min-h-0"
           >
             <TabsList className="w-full grid grid-cols-3 h-9 mt-2 bg-black/60 border border-cyan-500/15 shrink-0">
@@ -101,8 +174,40 @@ export default function AppSidebar() {
             </TabsContent>
           </Tabs>
         </div>
-      </SidebarContent>
 
+        {/* Chat panel — resizable bottom section when open */}
+        {chatOpen && (
+          <div
+            className="group-data-[collapsible=icon]:hidden flex flex-col border-t border-cyan-500/20 overflow-hidden"
+            style={{
+              flex: chatFullscreen
+                ? "1 1 0%"
+                : chatHeightPx
+                  ? `0 0 ${chatHeightPx}px`
+                  : "0 0 50%",
+            }}
+          >
+            {/* Drag resize handle */}
+            {!chatFullscreen && (
+              <div
+                onMouseDown={handleResizeMouseDown}
+                className="h-2 w-full shrink-0 cursor-row-resize flex items-center justify-center group select-none"
+                title="Drag to resize"
+              >
+                <div className="w-8 h-0.5 rounded-full bg-cyan-500/20 group-hover:bg-cyan-400/60 transition-colors" />
+              </div>
+            )}
+            <ChatWindow
+              isOpen={chatOpen}
+              onClose={onChatToggle}
+              embedded
+              isFullscreen={chatFullscreen}
+              onToggleFullscreen={handleToggleFullscreen}
+            />
+          </div>
+        )}
+        </div>
+      </SidebarContent>
       <SidebarFooter className="relative z-10 border-t border-cyan-500/15 p-3 group-data-[collapsible=icon]:hidden shrink-0">
         <p className="text-[10px] font-mono text-cyan-400/30 text-center tracking-widest uppercase">
           <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://fts.unocha.org/">OCHA FTS</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://www.acaps.org/en/thematics/all-topics/inform-severity-index">INFORM</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://data.humdata.org/">HDX</a>
