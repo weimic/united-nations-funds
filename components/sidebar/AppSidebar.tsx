@@ -22,7 +22,6 @@ interface AppSidebarProps {
 }
 
 export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) {
-  const { sidebarTab, setSidebarTab } = useAppContext();
   const { sidebarTab, setSidebarTab, setNavigationSource, setCountryDetailSource } = useAppContext();
 
   return (
