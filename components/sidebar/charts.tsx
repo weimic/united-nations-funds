@@ -11,6 +11,8 @@ import {
   Legend,
   ComposedChart,
   Line,
+  BarChart,
+  LineChart,
 } from "recharts";
 import type { CrisisAllocation, CrisisData } from "@/lib/types";
 import { useAppContext } from "@/lib/app-context";
@@ -40,7 +42,7 @@ function ClusterChart({
   return (
     <div className="h-56 w-full">
       <ResponsiveContainer width="100%" height="100%">
-        <ComposedChart data={data} margin={{ top: 12, right: 52, bottom: 24, left: 58 }}>
+        <ComposedChart data={data} margin={{ top: 12, right: 52, bottom: 44, left: 58 }}>
           <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
           <XAxis
             dataKey="name"
@@ -50,19 +52,25 @@ function ClusterChart({
                 data.find((d) => d.name === props.payload?.value)?.fullName ??
                 props.payload?.value ??
                 "";
+              const label = props.payload?.value ?? "";
+              const truncated =
+                data.length > 4 && label.length > 8
+                  ? label.slice(0, 8) + "…"
+                  : label;
               return (
                 <g transform={`translate(${props.x},${props.y})`}>
                   <title>{full}</title>
                   <text
                     x={0}
                     y={0}
-                    dy={12}
-                    textAnchor="middle"
+                    dy={8}
+                    textAnchor="end"
                     fontSize={8}
                     fill="rgba(0,200,255,0.55)"
                     fontFamily="monospace"
+                    transform="rotate(-35)"
                   >
-                    {props.payload?.value}
+                    {truncated}
                   </text>
                 </g>
               );
@@ -261,10 +269,49 @@ export function CBPFClusterChart({ clusters }: { clusters: CrisisAllocation[] })
 
 // ── Crisis Reach Chart (for crisis detail) ──────────────────────────────────
 
+type CrisisClusterRow = {
+  name: string;
+  fullName: string;
+  cbpf: number;
+  targeted: number;
+  reached: number;
+};
+
+/** Angled X-axis tick for the CBPF bar chart — avoids label overlap when bars are narrow. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+function AngledTick({ x, y, payload, data }: any) {
+  const full =
+    (data as CrisisClusterRow[]).find((d) => d.name === payload?.value)?.fullName ??
+    payload?.value ??
+    "";
+  const label: string = payload?.value ?? "";
+  const truncated =
+    (data as CrisisClusterRow[]).length > 4 && label.length > 8
+      ? label.slice(0, 8) + "…"
+      : label;
+  return (
+    <g transform={`translate(${x},${y})`}>
+      <title>{full}</title>
+      <text
+        x={0}
+        y={0}
+        dy={8}
+        textAnchor="end"
+        fontSize={8}
+        fill="rgba(0,200,255,0.55)"
+        fontFamily="monospace"
+        transform="rotate(-35)"
+      >
+        {truncated}
+      </text>
+    </g>
+  );
+}
+
 export function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
   const { data } = useAppContext();
 
-  const chartData: ClusterChartRow[] = useMemo(() => {
+  const chartData: CrisisClusterRow[] = useMemo(() => {
     const clusterMap = new Map<
       string,
       { allocations: number; reached: number; targetedPeople: number }
@@ -285,29 +332,147 @@ export function CrisisReachChart({ crisis }: { crisis: CrisisData }) {
         clusterMap.set(key, existing);
       }
     }
-    return [...clusterMap.entries()].map(([k, v]) => {
-      const costPerTargeted =
-        v.targetedPeople > 0 ? v.allocations / v.targetedPeople : 0;
-      const costPerReached = v.reached > 0 ? v.allocations / v.reached : 0;
-      const name = k.length > 14 ? k.slice(0, 14) + "…" : k;
-      return {
-        name,
-        fullName: k,
-        cbpf: Math.round(v.allocations / 1_000),
-        costPerTargeted: Math.round(costPerTargeted * 10) / 10,
-        costPerReached: Math.round(costPerReached * 10) / 10,
-      };
-    });
+    return [...clusterMap.entries()]
+      .sort((a, b) => b[1].allocations - a[1].allocations)
+      .map(([k, v]) => {
+        const name = k.length > 14 ? k.slice(0, 14) + "…" : k;
+        return {
+          name,
+          fullName: k,
+          cbpf: Math.round(v.allocations / 1_000),
+          targeted: v.targetedPeople,
+          reached: v.reached,
+        };
+      });
   }, [crisis, data.countries]);
 
   if (chartData.length === 0) return null;
 
   return (
-    <div className="space-y-2">
-      <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
-        CBPF Funding vs Cost Per Person
-      </p>
-      <ClusterChart data={chartData} barColor="#22d3ee" />
+    <div className="space-y-4">
+      {/* CBPF Funding bar chart */}
+      <div className="space-y-2">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+          CBPF Funding
+        </p>
+        <div className="h-48 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <BarChart data={chartData} margin={{ top: 8, right: 12, bottom: 44, left: 52 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
+              <XAxis
+                dataKey="name"
+                tick={<AngledTick data={chartData} />}
+                interval={0}
+                tickLine={false}
+                axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
+              />
+              <YAxis
+                tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
+                tickFormatter={(v: number) =>
+                  `$${v >= 1000 ? `${(v / 1000).toFixed(0)}M` : `${v}K`}`
+                }
+                tickLine={false}
+                axisLine={false}
+                width={48}
+                label={{
+                  value: "CBPF ($K)",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: -34,
+                  style: { fontSize: 8, fill: "rgba(34,211,238,0.5)", fontFamily: "monospace" },
+                }}
+              />
+              <Tooltip
+                contentStyle={CHART_TOOLTIP_STYLE}
+                labelStyle={CHART_LABEL_STYLE}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(value: any) => [`$${Number(value ?? 0).toLocaleString()}K`, "CBPF"]}
+              />
+              <Bar
+                dataKey="cbpf"
+                name="CBPF ($K)"
+                fill="#22d3ee"
+                radius={[3, 3, 0, 0]}
+                opacity={0.85}
+              />
+            </BarChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
+
+      {/* Targeted vs Reached line chart */}
+      <div className="space-y-2">
+        <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/70">
+          Targeted vs Reached
+        </p>
+        <div className="h-48 w-full">
+          <ResponsiveContainer width="100%" height="100%">
+            <LineChart data={chartData} margin={{ top: 8, right: 12, bottom: 44, left: 52 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(0,255,255,0.07)" vertical={false} />
+              <XAxis
+                dataKey="name"
+                tick={<AngledTick data={chartData} />}
+                interval={0}
+                tickLine={false}
+                axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
+              />
+              <YAxis
+                tick={{ fontSize: 9, fill: "rgba(0,200,255,0.55)", fontFamily: "monospace" }}
+                tickFormatter={(v: number) => {
+                  if (v >= 1_000_000) return `${(v / 1_000_000).toFixed(1)}M`;
+                  if (v >= 1_000) return `${(v / 1_000).toFixed(0)}K`;
+                  return String(v);
+                }}
+                tickLine={false}
+                axisLine={false}
+                width={48}
+                label={{
+                  value: "People",
+                  angle: -90,
+                  position: "insideLeft",
+                  offset: -34,
+                  style: { fontSize: 8, fill: "rgba(34,211,238,0.5)", fontFamily: "monospace" },
+                }}
+              />
+              <Tooltip
+                contentStyle={CHART_TOOLTIP_STYLE}
+                labelStyle={CHART_LABEL_STYLE}
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                formatter={(value: any, name: any) => {
+                  const v = Number(value ?? 0);
+                  const label = name === "targeted" ? "Targeted" : "Reached";
+                  return [v.toLocaleString(), label];
+                }}
+              />
+              <Legend
+                wrapperStyle={{
+                  fontSize: 9,
+                  fontFamily: "monospace",
+                  color: "rgba(0,200,255,0.5)",
+                  paddingTop: 4,
+                }}
+                iconSize={8}
+              />
+              <Line
+                type="linear"
+                dataKey="targeted"
+                name="Targeted"
+                stroke="#22c55e"
+                strokeWidth={2}
+                dot={{ r: 3, fill: "#22c55e" }}
+              />
+              <Line
+                type="linear"
+                dataKey="reached"
+                name="Reached"
+                stroke="#ef4444"
+                strokeWidth={2}
+                dot={{ r: 3, fill: "#ef4444" }}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+      </div>
     </div>
   );
 }

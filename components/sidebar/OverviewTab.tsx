@@ -28,11 +28,11 @@ import { StatCard } from "@/components/shared/StatCard";
 
 /** The "Overview" tab — global humanitarian stats, funding gaps, neglect rankings. */
 export function OverviewTab() {
-  const { data, setSelectedCountryIso3, setSidebarTab, setGlobeFocusIso3, setActiveCrisis } =
+  const { data, setSelectedCountryIso3, setSidebarTab, setGlobeFocusIso3, setActiveCrisis, setNavigationSource, setCountryDetailSource } =
     useAppContext();
   const stats = data.globalStats;
   const [globalView, setGlobalView] = useState<
-    "main" | "funding-gap-all" | "underlooked-crises-all"
+    "main" | "funding-gap-all" | "underlooked-crises-all" | "underlooked-countries-all"
   >("main");
 
   // ── Derived data ───────────────────────────────────────────────────────────
@@ -58,7 +58,7 @@ export function OverviewTab() {
 
   const fundingGapData = fundingGapAllData.slice(0, 10);
 
-  const neglectCountryRanking = useMemo(() => {
+  const neglectCountryAllRanking = useMemo(() => {
     return Object.values(data.countries)
       .filter(
         (c) => c.severity && c.overallFunding && c.overallFunding.totalRequirements > 0,
@@ -84,9 +84,10 @@ export function OverviewTab() {
           neglectIndex,
         };
       })
-      .sort((a, b) => b.neglectIndex - a.neglectIndex)
-      .slice(0, 15);
+      .sort((a, b) => b.neglectIndex - a.neglectIndex);
   }, [data.countries]);
+
+  const neglectCountryRanking = neglectCountryAllRanking.slice(0, 10);
 
   const neglectCrisisAllRanking = useMemo(() => {
     return data.crises
@@ -169,6 +170,7 @@ export function OverviewTab() {
                   onClick={() => {
                     setSelectedCountryIso3(row.iso3);
                     setGlobeFocusIso3(row.iso3);
+                    setCountryDetailSource("overview");
                     setSidebarTab("countries");
                   }}
                   className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
@@ -221,7 +223,7 @@ export function OverviewTab() {
           </button>
           <span className="text-cyan-500/30 text-xs">/</span>
           <span className="text-[11px] font-mono text-red-300/80 truncate">
-            All Underlooked Crises
+            All Overlooked Crises
           </span>
         </div>
         <ScrollArea className="flex-1 min-h-0">
@@ -233,6 +235,7 @@ export function OverviewTab() {
                   const crisis =
                     data.crises.find((c) => c.crisisId === row.crisisId) || null;
                   setActiveCrisis(crisis);
+                  setNavigationSource("overview");
                   setSidebarTab("crises");
                 }}
                 className="w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
@@ -248,13 +251,102 @@ export function OverviewTab() {
                     {row.neglectIndex.toFixed(2)}
                   </span>
                 </div>
-                <div className="h-1 rounded-full bg-muted/20 overflow-hidden mb-1">
+                <div className="h-1 rounded-full bg-muted/30 overflow-hidden mb-1">
                   <div
-                    className="h-full rounded-full bg-gradient-to-r from-amber-500 to-red-500"
+                    className="h-full rounded-full bg-red-500"
                     style={{
                       width: `${neglectCrisisAllRanking[0]?.neglectIndex ? (row.neglectIndex / neglectCrisisAllRanking[0].neglectIndex) * 100 : 0}%`,
                     }}
                   />
+                </div>
+                <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground flex-wrap">
+                  <span>
+                    Severity:{" "}
+                    <strong className="text-amber-400">
+                      {row.maxSeverity.toFixed(1)}
+                    </strong>
+                  </span>
+                  <span>
+                    Funded:{" "}
+                    <strong className="text-amber-400">
+                      {row.percentFunded.toFixed(0)}%
+                    </strong>
+                  </span>
+                  <span>
+                    Gap: <strong className="text-amber-400">{formatDollars(row.gap)}</strong>
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+        </ScrollArea>
+      </div>
+    );
+  }
+
+  if (globalView === "underlooked-countries-all") {
+    return (
+      <div className="flex flex-col h-full min-h-0">
+        <div className="flex items-center gap-2 px-3 py-2.5 border-b border-cyan-500/15 shrink-0">
+          <button
+            onClick={() => setGlobalView("main")}
+            className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
+          >
+            <ArrowLeft className="h-3.5 w-3.5" />
+            Overview
+          </button>
+          <span className="text-cyan-500/30 text-xs">/</span>
+          <span className="text-[11px] font-mono text-red-300/80 truncate">
+            All Overlooked Countries
+          </span>
+        </div>
+        <ScrollArea className="flex-1 min-h-0">
+          <div className="p-3 space-y-1">
+            {neglectCountryAllRanking.map((row, idx) => (
+              <button
+                key={row.iso3}
+                onClick={() => {
+                  setSelectedCountryIso3(row.iso3);
+                  setGlobeFocusIso3(row.iso3);
+                  setCountryDetailSource("overview");
+                  setSidebarTab("countries");
+                }}
+                className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
+              >
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-[9px] font-mono text-cyan-400/40 w-5 shrink-0">
+                    {idx + 1}.
+                  </span>
+                  <span className="text-[11px] font-medium flex-1 truncate">
+                    {row.name}
+                  </span>
+                  <span className="text-[9px] font-mono text-red-400 font-bold shrink-0">
+                    {row.neglectIndex.toFixed(2)}
+                  </span>
+                </div>
+                <div className="h-1 rounded-full bg-muted/30 overflow-hidden mb-1">
+                  <div
+                    className="h-full rounded-full bg-red-500"
+                    style={{
+                      width: `${neglectCountryAllRanking[0]?.neglectIndex ? (row.neglectIndex / neglectCountryAllRanking[0].neglectIndex) * 100 : 0}%`,
+                    }}
+                  />
+                </div>
+                <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground">
+                  <span>
+                    Severity:{" "}
+                    <strong className="text-amber-400">{row.severity.toFixed(1)}</strong>
+                  </span>
+                  <span>
+                    Funded:{" "}
+                    <strong className="text-amber-400">
+                      {row.percentFunded}%
+                    </strong>
+                  </span>
+                  <span>
+                    Gap:{" "}
+                    <strong className="text-amber-400">{formatDollars(row.gap)}</strong>
+                  </span>
                 </div>
               </button>
             ))}
@@ -269,7 +361,7 @@ export function OverviewTab() {
   return (
     <ScrollArea className="flex-1 min-h-0">
       <div className="p-3 space-y-3">
-        {/* Underlooked Crises */}
+        {/* Overlooked Crises */}
         {neglectCrisisRanking.length > 0 && (
           <div className="space-y-2">
             <div className="flex items-center justify-between gap-2 px-1">
@@ -277,13 +369,13 @@ export function OverviewTab() {
                 <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
                 <HoverTip tip="Crises receiving the least global attention relative to their severity and scale. Higher score = greater mismatch between need and funding.">
                   <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
-                    Underlooked Crises (Top 10)
+                    Top 10 Overlooked Crises
                   </p>
                 </HoverTip>
               </div>
               <button
                 onClick={() => setGlobalView("underlooked-crises-all")}
-                className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300"
+                className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
               >
                 Show all
               </button>
@@ -306,6 +398,7 @@ export function OverviewTab() {
                       const crisis =
                         data.crises.find((c) => c.crisisId === row.crisisId) || null;
                       setActiveCrisis(crisis);
+                      setNavigationSource("overview");
                       setSidebarTab("crises");
                     }}
                     className="w-full rounded border border-red-500/10 bg-black/30 p-2 text-left hover:border-red-500/30 hover:bg-red-500/5 transition-all"
@@ -338,35 +431,27 @@ export function OverviewTab() {
                         )}
                       </div>
                     </div>
-                    <div className="h-1 rounded-full bg-muted/20 overflow-hidden mb-1">
+                    <div className="h-1 rounded-full bg-muted/30 overflow-hidden mb-1">
                       <div
-                        className="h-full rounded-full bg-gradient-to-r from-amber-500 to-red-500"
+                        className="h-full rounded-full bg-red-500"
                         style={{ width: `${barWidth}%` }}
                       />
                     </div>
                     <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground flex-wrap">
                       <span>
-                        Countries:{" "}
-                        <strong className="text-cyan-400/70">{row.countriesCount}</strong>
-                      </span>
-                      <span>
-                        Max Sev:{" "}
+                        Severity:{" "}
                         <strong className="text-amber-400">
                           {row.maxSeverity.toFixed(1)}
                         </strong>
                       </span>
                       <span>
                         Funded:{" "}
-                        <strong
-                          className={
-                            row.percentFunded < 50 ? "text-red-400" : "text-cyan-400"
-                          }
-                        >
+                        <strong className="text-amber-400">
                           {row.percentFunded.toFixed(0)}%
                         </strong>
                       </span>
                       <span>
-                        Gap: <strong className="text-red-400">{formatDollars(row.gap)}</strong>
+                        Gap: <strong className="text-amber-400">{formatDollars(row.gap)}</strong>
                       </span>
                     </div>
                   </button>
@@ -387,7 +472,7 @@ export function OverviewTab() {
                 </p>
                 <button
                   onClick={() => setGlobalView("funding-gap-all")}
-                  className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300"
+                  className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
                 >
                   Show all
                 </button>
@@ -416,7 +501,7 @@ export function OverviewTab() {
                         fontFamily: "monospace",
                       }}
                       tickFormatter={(v: number) =>
-                        v >= 1000 ? `$${(v / 1000).toFixed(0)}B` : `$${v}M`
+                        v === 0 ? "$0" : v >= 1000 ? `$${(v / 1000).toFixed(0)}B` : `$${v}M`
                       }
                       tickLine={false}
                       axisLine={{ stroke: "rgba(0,200,255,0.15)" }}
@@ -436,21 +521,25 @@ export function OverviewTab() {
                     <Tooltip
                       contentStyle={CHART_TOOLTIP_STYLE}
                       labelStyle={CHART_LABEL_STYLE}
+                      separator=": "
+                      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                      itemSorter={(item: any) => {
+                        const order: Record<string, number> = {
+                          "Funded (on-appeal)": 0,
+                          "Funded (off-appeal)": 1,
+                          "Unfunded Gap": 2,
+                        };
+                        return order[item.name as string] ?? 99;
+                      }}
                       // eslint-disable-next-line @typescript-eslint/no-explicit-any
                       formatter={(value: any, name: any) => {
                         const v =
                           typeof value === "number"
                             ? value
                             : parseFloat(String(value ?? 0));
-                        const label =
-                          name === "onAppeal"
-                            ? "Funded (on-appeal)"
-                            : name === "offAppeal"
-                              ? "Funded (off-appeal)"
-                              : "Unfunded Gap";
                         return [
                           v >= 1000 ? `$${(v / 1000).toFixed(2)}B` : `$${v}M`,
-                          label,
+                          name,
                         ];
                       }}
                     />
@@ -462,6 +551,34 @@ export function OverviewTab() {
                         paddingTop: 4,
                       }}
                       iconSize={8}
+                      content={() => {
+                        const items: { label: string; color: string }[] = [
+                          { label: "Funded (on-appeal)", color: "#22d3ee" },
+                          { label: "Funded (off-appeal)", color: "#0e7490" },
+                          { label: "Unfunded Gap", color: "#ef4444" },
+                        ];
+                        return (
+                          <div className="flex items-center justify-center gap-3 pt-1">
+                            {items.map((item) => (
+                              <span key={item.label} className="flex items-center gap-1">
+                                <span
+                                  className="inline-block w-2 h-2 shrink-0"
+                                  style={{ backgroundColor: item.color }}
+                                />
+                                <span
+                                  style={{
+                                    fontSize: 8,
+                                    fontFamily: "monospace",
+                                    color: "rgba(0,200,255,0.5)",
+                                  }}
+                                >
+                                  {item.label}
+                                </span>
+                              </span>
+                            ))}
+                          </div>
+                        );
+                      }}
                     />
                     <Bar
                       dataKey="onAppeal"
@@ -494,22 +611,30 @@ export function OverviewTab() {
           </>
         )}
 
-        {/* Underlooked Countries Table */}
+        {/* Overlooked Countries Table */}
         {neglectCountryRanking.length > 0 && (
           <>
             <Separator className="opacity-20 my-2" />
             <div className="space-y-2">
-              <div className="flex items-center gap-2 px-1">
-                <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
-                <HoverTip tip="Countries where crisis severity is high but funding falls short. Ranked by a composite of severity, funding gap, and scale of need.">
-                  <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
-                    Underlooked Countries (Severity-Adjusted)
-                  </p>
-                </HoverTip>
+              <div className="flex items-center justify-between gap-2 px-1">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5 text-red-400" />
+                  <HoverTip tip="Countries where crisis severity is high but funding falls short. Ranked by a composite of severity, funding gap, and scale of need.">
+                    <p className="text-[10px] font-mono uppercase tracking-widest text-red-400/70">
+                      Top 10 Overlooked Countries
+                    </p>
+                  </HoverTip>
+                </div>
+                <button
+                  onClick={() => setGlobalView("underlooked-countries-all")}
+                  className="text-[10px] font-mono text-cyan-400/70 hover:text-cyan-300 underline underline-offset-2"
+                >
+                  Show all
+                </button>
               </div>
               <p className="text-[9px] font-mono text-muted-foreground px-1 leading-tight">
                 Ranked by Neglect Index: combines severity, underfunding, and scale. Higher = more
-                underlooked.
+                overlooked.
               </p>
               <div className="space-y-1">
                 {neglectCountryRanking.map((row, idx) => {
@@ -523,6 +648,7 @@ export function OverviewTab() {
                       onClick={() => {
                         setSelectedCountryIso3(row.iso3);
                         setGlobeFocusIso3(row.iso3);
+                        setCountryDetailSource("overview");
                         setSidebarTab("countries");
                       }}
                       className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"
@@ -538,39 +664,27 @@ export function OverviewTab() {
                           {row.neglectIndex.toFixed(2)}
                         </span>
                       </div>
-                      <div className="h-1 rounded-full bg-muted/20 overflow-hidden mb-1">
+                      <div className="h-1 rounded-full bg-muted/30 overflow-hidden mb-1">
                         <div
-                          className="h-full rounded-full bg-gradient-to-r from-amber-500 to-red-500"
+                          className="h-full rounded-full bg-red-500"
                           style={{ width: `${barWidth}%` }}
                         />
                       </div>
                       <div className="flex items-center gap-3 text-[9px] font-mono text-muted-foreground">
                         <span>
-                          Sev:{" "}
+                          Severity:{" "}
                           <strong className="text-amber-400">{row.severity.toFixed(1)}</strong>
                         </span>
                         <span>
                           Funded:{" "}
-                          <strong
-                            className={
-                              row.percentFunded < 50 ? "text-red-400" : "text-cyan-400"
-                            }
-                          >
+                          <strong className="text-amber-400">
                             {row.percentFunded}%
                           </strong>
                         </span>
                         <span>
                           Gap:{" "}
-                          <strong className="text-red-400">{formatDollars(row.gap)}</strong>
+                          <strong className="text-amber-400">{formatDollars(row.gap)}</strong>
                         </span>
-                        {row.offAppealShare > 5 && (
-                          <span>
-                            Off-appeal:{" "}
-                            <strong className="text-cyan-400/60">
-                              {row.offAppealShare.toFixed(0)}%
-                            </strong>
-                          </span>
-                        )}
                       </div>
                     </button>
                   );

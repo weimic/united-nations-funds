@@ -25,7 +25,7 @@ export function CountryDetail({
   iso3: string;
   onBack: () => void;
 }) {
-  const { data, getCountry, getAllCrisesForCountry, setActiveCrisis, setSidebarTab } = useAppContext();
+  const { data, getCountry, getAllCrisesForCountry, setActiveCrisis, setSidebarTab, setNavigationSource } = useAppContext();
   const country = getCountry(iso3);
   if (!country) return null;
 
@@ -43,6 +43,7 @@ export function CountryDetail({
       onBack={onBack}
       setActiveCrisis={setActiveCrisis}
       setSidebarTab={setSidebarTab}
+      setNavigationSource={setNavigationSource}
     />
   );
 }
@@ -57,6 +58,7 @@ function CountryDetailInner({
   onBack,
   setActiveCrisis,
   setSidebarTab,
+  setNavigationSource,
 }: {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   country: any;
@@ -73,6 +75,8 @@ function CountryDetailInner({
   setActiveCrisis: any;
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   setSidebarTab: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  setNavigationSource: any;
 }) {
   const rankings = useMemo(() => {
     if (!overall) return null;
@@ -127,7 +131,7 @@ function CountryDetailInner({
           className="flex items-center gap-1.5 text-[11px] font-mono text-cyan-400/60 hover:text-cyan-400 transition-colors"
         >
           <ArrowLeft className="h-3.5 w-3.5" />
-          Countries
+          Back
         </button>
         <span className="text-cyan-500/30 text-xs">/</span>
         <span className="text-[11px] font-mono text-cyan-300/80 truncate">{country.name}</span>
@@ -282,6 +286,7 @@ function CountryDetailInner({
                       key={crisis.crisisId}
                       onClick={() => {
                         setActiveCrisis(crisis);
+                        setNavigationSource("countries");
                         setSidebarTab("crises");
                       }}
                       className="w-full rounded border border-red-500/15 bg-red-500/5 p-2.5 text-left hover:border-red-500/35 hover:bg-red-500/10 transition-all"
