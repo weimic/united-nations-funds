@@ -9,6 +9,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 - **Funding source**: `fts_requirements_funding_global.csv` with explicit split between on-appeal and off-appeal funding.
 - **CBPF source**: `specificcrisis.csv` for allocation, targeted people, and reached people metrics.
 - **Geo source**: `countries.geo.json` for globe rendering and ISO3 mapping.
+- **Crisis details source**: `crisisdetails.json` for per-crisis narrative summary, timeline of key events, and related external links. Matched to INFORM crises by `crisis_name` ↔ `crisisName` (case-insensitive).
 
 ## Current Product Capabilities
 - **Overview tab analytics** (formerly "Global" tab)
@@ -32,10 +33,15 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- Crisis drivers listed at the bottom.
 - **Crisis detail**
 	- Aggregate stats (requirements, funded, CBPF, gap).
-	- CBPF Funding bar chart (standalone, no cost-per-person overlay). X-axis labels rotate at −35° and truncate when dense to prevent overlap.
-	- Targeted vs Reached line chart (straight lines) showing targeted (green) and reached (red) people per cluster, displayed beneath the CBPF chart.
-	- Single country card styled like the Overlooked Countries cards (neglect index bar, severity/funded/gap stats). Heading reads "Country" (not "Country Rankings").
-	- Clicking the country card focuses globe, highlights that country's borders, and sets `countryDetailSource` to "crises" so back from country detail returns to the crisis detail.
+	- CBPF Funding bar chart (standalone, no cost-per-person overlay). X-axis labels are horizontal and wrap to a second line when long; if the second line still exceeds the character budget it is truncated with "…". Hovering a bar brightens its fill instead of showing a white cursor rectangle.
+	- Targeted vs Reached line chart (straight lines) showing targeted (green) and reached (red) people per cluster, displayed beneath the CBPF chart. Same horizontal wrapping tick style as the CBPF chart.
+	- All chart tooltips use `labelFormatter` to show the full cluster name (never truncated). Tooltip label text wraps to a second line if needed (`whiteSpace: normal`, `maxWidth: 240px`).
+	- Country cards styled identically to the Underlooked Countries cards in the Overview tab: rank number, solid red neglect-index bar on `bg-muted/30` track, full stat row (Severity, Funded %, Gap, Off-appeal %). Heading reads "Country".
+	- Clicking a country card focuses globe and highlights that country's borders.
+	- **Crisis summary**: narrative paragraph sourced from `crisisdetails.json`, rendered below the country list with the section heading "Summary". Matches the app's `text-[12px] leading-relaxed text-foreground/75` style.
+	- **Crisis timeline & learn more**: two-equal-column grid layout (`grid-cols-2`) — left column contains centered "Timeline" heading and vertical timeline events; right column contains centered "Learn More" heading and compact link cards. Both headings are centered within their respective halves. Timeline uses cyan dot nodes connected by a `bg-cyan-500/20` vertical line. Each node shows a short date (e.g. "Aug 2017") and event name. Tooltip uses a controlled `open` state on the parent row so hovering anywhere on an event shows the tooltip, but the `TooltipTrigger` wraps only the dot element — this anchors the tooltip diamond (arrow) to the dot. Tooltip appears to the **left** of the timeline (`side="left"`, `align="center"`, `sideOffset={6}`) so the card floats left with its diamond pointing at the dot. Only the dot itself has CSS `:hover` styles (`hover:bg-cyan-400/50 hover:border-cyan-300`); hovering the text area shows the tooltip but produces no visual highlight. Tooltip matches app styling (`bg-black/95`, `border-cyan-500/30`, cyan shadow) showing full date, event name, and description. Related links rendered as compact cards with `ExternalLink` icon and domain label (opens in new tab). Each link card individually highlights on hover (`hover:border-cyan-500/25 hover:bg-cyan-500/5`); only the hovered link changes — icon and text do not use `group-hover` so no unintended multi-link highlighting occurs. When only one section exists (timeline or links), the other column renders as an empty placeholder.
+	- Crisis detail data (summary, timeline, related links) is loaded from `public/data/crisisdetails.json` at build time via `data-aggregator.ts` and merged into `CrisisData` by matching `crisis_name` to `crisisName` (case-insensitive). Types: `CrisisTimelineEvent` interface in `types.ts`.
+	- **Anomaly detection badges**: Percentile-based statistical anomaly detection flags outlier countries across the global cohort. Three metrics analyzed: percent funded (low), funding gap per capita (high), and severity-funding mismatch (high). Severity: ≤P5/≥P95 → critical (red), P5–P10/P90–P95 → warning (amber). Crisis-level summary banner shows total anomaly count with severity breakdown and number of affected countries. Per-country compact badges with hover tooltip listing each anomaly's human-readable explanation. Detection runs at build time via `lib/anomalies.ts`; results stored in `CrisisCountryEntry.anomalies: FundingAnomaly[]`. Full statistical methodology documented in STATISTICS.md §7.
 - **Crises tab**
 	- Category-based crisis browsing with per-category stats.
 - **Globe interaction**

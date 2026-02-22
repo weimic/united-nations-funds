@@ -75,12 +75,25 @@ export interface UnifiedCountryData {
   crisisAllocations: CrisisCountryAllocation | null;
 }
 
+/** A single event on a crisis timeline */
+export interface CrisisTimelineEvent {
+  date: string;
+  name: string;
+  description: string;
+}
+
 /** Crisis-level data grouping countries */
 export interface CrisisData {
   crisisName: string;
   crisisId: string;
   countries: CrisisCountryEntry[];
   categories: string[];
+  /** Narrative summary of the crisis (from crisisdetails.json) */
+  summary?: string;
+  /** Chronological timeline of key events (from crisisdetails.json) */
+  timeline?: CrisisTimelineEvent[];
+  /** External reference URLs for further reading (from crisisdetails.json) */
+  relatedLinks?: string[];
 }
 
 /** Global aggregate statistics */
@@ -99,6 +112,18 @@ export interface GlobalStats {
   percentFundedAll: number;
   countriesInCrisis: number;
   activeCrisisCount: number;
+}
+
+/** A statistical anomaly detected for a country within a crisis context */
+export interface FundingAnomaly {
+  /** Which metric triggered the anomaly */
+  metric: "percentFunded" | "fundingGapPerCapita" | "severityFundingMismatch";
+  /** Human-readable explanation of what was detected */
+  description: string;
+  /** Percentile rank (0–100) within global cohort */
+  zScore: number;
+  /** Critical (≤ P5 / ≥ P95) or warning (P5–P10 / P90–P95) */
+  severity: "warning" | "critical";
 }
 
 /** A country entry within a crisis context */
@@ -120,6 +145,8 @@ export interface CrisisCountryEntry {
   reachRatio: number;
   /** CBPF Allocations / Total Funding * 100 */
   cbpfDependency: number;
+  /** Statistical anomalies detected for this country within the crisis */
+  anomalies: FundingAnomaly[];
 }
 
 /** GeoJSON feature from countries.geo.json */

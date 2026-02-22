@@ -208,14 +208,10 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
         )}
         </div>
       </SidebarContent>
-
-      <SidebarFooter className="relative z-10 border-t border-cyan-500/15 px-3 py-2 group-data-[collapsible=icon]:hidden shrink-0">
-        <div className="flex items-center justify-between">
-          <p className="text-[10px] font-mono text-cyan-400/30 tracking-widest uppercase">
-            OCHA FTS · INFORM · CBPF
-          </p>
-          <ChatToggleButton isOpen={chatOpen} onClick={onChatToggle} />
-        </div>
+      <SidebarFooter className="relative z-10 border-t border-cyan-500/15 p-3 group-data-[collapsible=icon]:hidden shrink-0">
+        <p className="text-[10px] font-mono text-cyan-400/30 text-center tracking-widest uppercase">
+          <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://fts.unocha.org/">OCHA FTS</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://www.acaps.org/en/thematics/all-topics/inform-severity-index">INFORM</a> · <a className="underline cursor-pointer" target="_blank" rel="noopener noreferrer" href="https://data.humdata.org/">HDX</a>
+        </p>
       </SidebarFooter>
     </Sidebar>
   );
