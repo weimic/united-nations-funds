@@ -1,6 +1,6 @@
 "use client";
 
-import { createContext, useContext, useState, useCallback, type ReactNode } from "react";
+import { createContext, useContext, useState, useCallback, useMemo, type ReactNode } from "react";
 import type {
   CrisisData,
   CrisisCountryEntry,
@@ -14,16 +14,36 @@ interface AppContextType {
   setActiveCrisis: (crisis: CrisisData | null) => void;
   selectedCountryIso3: string | null;
   setSelectedCountryIso3: (iso3: string | null) => void;
-  sidebarTab: "crises" | "countries";
-  setSidebarTab: (tab: "crises" | "countries") => void;
-  crisisModalOpen: boolean;
-  setCrisisModalOpen: (open: boolean) => void;
+  sidebarTab: "crises" | "countries" | "overview";
+  setSidebarTab: (tab: "crises" | "countries" | "overview") => void;
+  activeCategories: Set<string>;
+  setActiveCategories: (cats: Set<string>) => void;
+  /** ISO3 to rotate globe to face */
+  globeFocusIso3: string | null;
+  setGlobeFocusIso3: (iso3: string | null) => void;
+  /** What the spikes represent: funding gap or severity */
+  spikeMode: "fundingGap" | "severity";
+  setSpikeMode: (mode: "fundingGap" | "severity") => void;
+  /** Map visualization style: dot cloud or solid country fills */
+  mapStyle: "dots" | "solid";
+  setMapStyle: (style: "dots" | "solid") => void;
+  /** Spike color mode: default (orange) or spectrum (yellow-to-red by magnitude) */
+  spikeColorMode: "default" | "spectrum";
+  setSpikeColorMode: (mode: "default" | "spectrum") => void;
   /** Get the active crisis entry for a specific country */
   getCrisisEntry: (iso3: string) => CrisisCountryEntry | null;
   /** Get unified country data */
   getCountry: (iso3: string) => UnifiedCountryData | null;
   /** ISO3 codes of countries in the active crisis */
   activeCrisisCountryCodes: Set<string>;
+  /** All crises that include a given country, with their entry */
+  getAllCrisesForCountry: (iso3: string) => Array<{ crisis: CrisisData; entry: CrisisCountryEntry }>;
+  /** Where the current crisis detail navigation originated from (e.g. "overview") */
+  navigationSource: string | null;
+  setNavigationSource: (source: string | null) => void;
+  /** Where the current country detail navigation originated from (e.g. "overview", "crises") */
+  countryDetailSource: string | null;
+  setCountryDetailSource: (source: string | null) => void;
 }
 
 const AppContext = createContext<AppContextType | null>(null);
@@ -36,14 +56,19 @@ export function AppProvider({
   children: ReactNode;
 }) {
   const [activeCrisis, setActiveCrisis] = useState<CrisisData | null>(null);
-  const [selectedCountryIso3, setSelectedCountryIso3] = useState<string | null>(
-    null
-  );
-  const [sidebarTab, setSidebarTab] = useState<"crises" | "countries">("crises");
-  const [crisisModalOpen, setCrisisModalOpen] = useState(false);
+  const [selectedCountryIso3, setSelectedCountryIso3] = useState<string | null>(null);
+  const [sidebarTab, setSidebarTab] = useState<"crises" | "countries" | "overview">("overview");
+  const [activeCategories, setActiveCategories] = useState<Set<string>>(new Set());
+  const [globeFocusIso3, setGlobeFocusIso3] = useState<string | null>(null);
+  const [spikeMode, setSpikeMode] = useState<"fundingGap" | "severity">("fundingGap");
+  const [mapStyle, setMapStyle] = useState<"dots" | "solid">("dots");
+  const [spikeColorMode, setSpikeColorMode] = useState<"default" | "spectrum">("default");
+  const [navigationSource, setNavigationSource] = useState<string | null>(null);
+  const [countryDetailSource, setCountryDetailSource] = useState<string | null>(null);
 
-  const activeCrisisCountryCodes = new Set(
-    activeCrisis?.countries.map((c) => c.iso3) ?? []
+  const activeCrisisCountryCodes = useMemo(
+    () => new Set(activeCrisis?.countries.map((c) => c.iso3) ?? []),
+    [activeCrisis]
   );
 
   const getCrisisEntry = useCallback(
@@ -61,6 +86,18 @@ export function AppProvider({
     [data]
   );
 
+  const getAllCrisesForCountry = useCallback(
+    (iso3: string): Array<{ crisis: CrisisData; entry: CrisisCountryEntry }> => {
+      const results: Array<{ crisis: CrisisData; entry: CrisisCountryEntry }> = [];
+      for (const crisis of data.crises) {
+        const entry = crisis.countries.find((c) => c.iso3 === iso3);
+        if (entry) results.push({ crisis, entry });
+      }
+      return results;
+    },
+    [data.crises]
+  );
+
   return (
     <AppContext.Provider
       value={{
@@ -71,11 +108,24 @@ export function AppProvider({
         setSelectedCountryIso3,
         sidebarTab,
         setSidebarTab,
-        crisisModalOpen,
-        setCrisisModalOpen,
+        activeCategories,
+        setActiveCategories,
+        globeFocusIso3,
+        setGlobeFocusIso3,
+        spikeMode,
+        setSpikeMode,
+        mapStyle,
+        setMapStyle,
+        spikeColorMode,
+        setSpikeColorMode,
         getCrisisEntry,
         getCountry,
         activeCrisisCountryCodes,
+        getAllCrisesForCountry,
+        navigationSource,
+        setNavigationSource,
+        countryDetailSource,
+        setCountryDetailSource,
       }}
     >
       {children}
