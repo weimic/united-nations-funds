@@ -38,15 +38,29 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
     dragStartY.current = e.clientY;
     dragStartHeight.current = chatHeightPx ?? container.clientHeight * 0.5;
 
+    let rafId: number | null = null;
+
     const onMouseMove = (ev: MouseEvent) => {
       if (dragStartY.current === null) return;
-      const delta = dragStartY.current - ev.clientY;
-      const containerH = sidebarContentRef.current?.clientHeight ?? container.clientHeight;
-      const newHeight = Math.max(80, Math.min(containerH - 60, dragStartHeight.current + delta));
-      setChatHeightPx(newHeight);
+      // Throttle to one state update per animation frame to prevent
+      // rapid-fire re-renders that push Recharts ResizeObserver into an
+      // infinite setState loop (maximum update depth exceeded).
+      if (rafId !== null) return;
+      rafId = requestAnimationFrame(() => {
+        rafId = null;
+        if (dragStartY.current === null) return;
+        const delta = dragStartY.current - ev.clientY;
+        const containerH = sidebarContentRef.current?.clientHeight ?? container.clientHeight;
+        const newHeight = Math.max(80, Math.min(containerH - 60, dragStartHeight.current + delta));
+        setChatHeightPx(newHeight);
+      });
     };
 
     const onMouseUp = () => {
+      if (rafId !== null) {
+        cancelAnimationFrame(rafId);
+        rafId = null;
+      }
       dragStartY.current = null;
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);
