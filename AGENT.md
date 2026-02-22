@@ -5,7 +5,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 
 ## Current Data Scope
 - **Primary analysis year**: **2025** (FTS and CBPF are filtered to 2025 in aggregation).
-- **Severity source**: INFORM severity workbook, crisis-country granularity.
+- **Severity source**: INFORM severity workbook with two sheets: "INFORM Severity - country" for official per-country overall severity, and "INFORM Severity - all crises" for per-crisis-per-country severity.
 - **Funding source**: `fts_requirements_funding_global.csv` with explicit split between on-appeal and off-appeal funding.
 - **CBPF source**: `specificcrisis.csv` for allocation, targeted people, and reached people metrics.
 - **Geo source**: `countries.geo.json` for globe rendering and ISO3 mapping.
@@ -34,8 +34,6 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- Clicking a country in crisis detail focuses globe and highlights that country's borders.
 - **Crises tab**
 	- Category-based crisis browsing with per-category stats.
-- **Spike selector** (above tabs, always visible)
-	- Toggle spikes between **Funding Gap** and **Severity** from any tab (Overview, Crises, or Countries).
 - **Globe interaction**
 	- Correct geographic orientation (east = right, west = left, prime meridian facing camera).
 	- Crisis/funding spikes and severity glow overlays.
@@ -43,15 +41,18 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- **Selected country borders**: clicking a country (via sidebar or globe) persistently highlights its borders on the globe.
 	- **Hover tooltip**: left-aligned with dark background (`bg-black/90`), backdrop blur, and cyan border. Shows country name, severity, funding, and click prompt.
 	- Click-through from spike or country surface to country detail.
-	- **Spike mode label**: bottom-left overlay shows what the spikes currently represent (Funding Gap or Severity).
-	- **Spike color mode toggle**: bottom-left toggle switches between default coloring and spectrum mode. Spectrum mode colors each spike as a solid yellow-to-red gradient based on magnitude — makes relative spike heights visually distinct. Spike material uses `MeshBasicMaterial` with white base color so instance colors (set via `setColorAt`) render correctly in both modes.
-	- **Spectrum legend**: when spectrum mode is active, a top-left legend shows the yellow-to-red scale with "Low" and "High" labels and a description of what the values represent.
-	- **Map style toggle**: bottom-right toggle switches between dot cloud and solid country fill. Solid fill uses severity-based colors for crisis countries, base blue for data countries without severity, and white for neutral countries with no data. Ocean color is preserved.
+	- **Globe controls** (bottom-right, stacked vertically): two labeled switch bars using consistent pill style.
+		- **Spikes switch**: "Spikes: Funding [toggle] Severity" — switches spike data between funding gap and severity modes. Knob turns red in severity mode.
+		- **View switch**: "View: Dots [toggle] Countries" — switches between dot-cloud and solid country-fill map styles.
+	- **Spike color mode** (context state only, no UI toggle): `spikeColorMode` still exists in context for programmatic use; spectrum mode colors each spike yellow-to-red by magnitude. Spike material uses `MeshBasicMaterial` with white base color so instance colors render correctly.
+	- **Map style: solid fill**: severity-based colors for crisis countries, base blue for data countries without severity, and white for neutral countries with no data. Ocean color is preserved.
 	- **Solid country map**: aligned to match dot map via −π/2 Y-axis rotation on the texture sphere. Rendered at 8192×4096 resolution with anisotropic filtering (16×), mipmap generation, subtle country border strokes, and 128-segment sphere geometry for crisp rendering.
 
 ## Data Modeling Notes
 - Aggregation joins data by ISO3 with alias handling for common country naming variants.
 - INFORM parsing expands multi-ISO rows (e.g. "ECU, PER") so crisis-country representation is complete for country pages.
+- **Country severity** uses the "INFORM Severity - country" sheet (official aggregate across all crises for that country). This differs from the per-crisis severity and ensures Underlooked Countries and Underlooked Crises rankings are distinct. Falls back to the max per-crisis severity only for countries missing from the country sheet.
+- **Crisis-level severity** (`CrisisCountryEntry.severityIndex`) uses the "INFORM Severity - all crises" sheet, preserving individual crisis scores.
 - Neglect index = (severity/5) × (1 − %funded) × log₁₀(1 + requirements/$1M). Higher = more overlooked.
 - Globe coordinate mapping: `x = cos(lat)·sin(lon)`, `y = sin(lat)`, `z = cos(lat)·cos(lon)` — puts prime meridian at +z (camera front).
 
@@ -71,6 +72,10 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 - **Severity vs Funding scatter chart** (was on overview tab) — removed for clarity.
 - **Overall Funding (FTS) radial circles** (was on country detail) — redundant with the funding gap bar and appeal breakdown.
 - **Active crisis banner** (was above tabs in sidebar) — removed for cleaner UX; crisis context is visible in the Crises tab detail view.
+- **Spike selector** (was above tabs in sidebar) — moved to globe overlay as a switch bar in the bottom-right control group.
+- **Spike color mode toggle** (was bottom-left of globe) — removed from UI; spectrum mode still exists in context state for programmatic use.
+- **Spike mode label** (was bottom-left of globe, "Spikes: Funding Gap") — replaced by the labeled switch bar in the bottom-right control group.
+- **Spectrum legend** (was top-left of globe) — removed along with the spectrum toggle UI.
 
 ## Near-Term Engineering Priorities
 - Add automated regression tests for key aggregations (especially crisis-country joins and ranking outputs).

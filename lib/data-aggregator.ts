@@ -189,6 +189,69 @@ function parseInformSeverity(): InformSeverity[] {
   return results;
 }
 
+/**
+ * Parse the "INFORM Severity - country" sheet which contains the official
+ * overall INFORM severity score per country (an aggregate across all crises
+ * affecting that country).  This is different from the per-crisis scores in
+ * "INFORM Severity - all crises" and must be used for country-level displays.
+ */
+function parseInformSeverityCountry(): Map<string, InformSeverity> {
+  const dir = path.join(process.cwd(), "public", "data");
+  const files = fs.readdirSync(dir);
+  const xlsxFile = files.find(
+    (f) => f.endsWith(".xlsx") && f.includes("inform-severity")
+  );
+  if (!xlsxFile) {
+    console.warn("INFORM severity xlsx not found (country sheet)");
+    return new Map();
+  }
+
+  const buf = fs.readFileSync(path.join(dir, xlsxFile));
+  const wb = XLSX.read(buf);
+
+  const sheetName = "INFORM Severity - country";
+  const ws = wb.Sheets[sheetName];
+  if (!ws) {
+    console.warn(`Sheet "${sheetName}" not found`);
+    return new Map();
+  }
+
+  const rows = XLSX.utils.sheet_to_json<string[]>(ws, { header: 1, raw: true });
+
+  // Header is at row index 1 (row 0 is the title).  Data starts at row 4.
+  // Columns mirror the crisis sheet:
+  //   0=CRISIS  1=CRISIS_ID  2=COUNTRY  3=ISO3  4=DRIVERS
+  //   5=INFORM Severity Index  6=category(num)  7=category(text)  8=Trend
+  //   19=Regions
+  const result = new Map<string, InformSeverity>();
+
+  for (let i = 4; i < rows.length; i++) {
+    const row = rows[i];
+    if (!row || !row[3]) continue;
+
+    const iso3 = String(row[3]).trim().toUpperCase();
+    if (!iso3 || iso3.length !== 3) continue;
+
+    const severityIndex =
+      typeof row[5] === "number" ? row[5] : parseFloat(String(row[5]));
+    if (!Number.isFinite(severityIndex)) continue;
+
+    result.set(iso3, {
+      crisisName: String(row[0] || ""),
+      crisisId: String(row[1] || ""),
+      country: String(row[2] || ""),
+      iso3,
+      drivers: String(row[4] || ""),
+      severityIndex,
+      severityCategory: String(row[7] || row[6] || ""),
+      trend: String(row[8] || "Stable"),
+      region: String(row[19] || ""),
+    });
+  }
+
+  return result;
+}
+
 // ── Overall Funding ────────────────────────────────────────────────────────────
 
 function parseOverallFunding(): OverallFunding[] {
@@ -369,6 +432,7 @@ export interface AggregatedData {
 export function aggregateAllData(): AggregatedData {
   const { geoData, nameToIso3, iso3ToName } = loadGeoData();
   const severity = parseInformSeverity();
+  const countrySeverity = parseInformSeverityCountry();
   const funding = parseOverallFunding();
   const crisisAllocations = parseCrisisAllocations(nameToIso3);
 
@@ -387,15 +451,26 @@ export function aggregateAllData(): AggregatedData {
     });
   }
 
-  // Add severity data (pick the highest severity per country)
-  const severityByCountry = new Map<string, InformSeverity>();
+  // Add country-level INFORM severity data.
+  // Prefer the official "INFORM Severity - country" sheet which provides the
+  // overall severity for each country (accounting for all its crises).
+  // Fall back to the highest per-crisis severity only when a country appears in
+  // the crisis sheet but not in the country sheet.
+  const fallbackSeverityByCountry = new Map<string, InformSeverity>();
   for (const s of severity) {
-    const existing = severityByCountry.get(s.iso3);
+    const existing = fallbackSeverityByCountry.get(s.iso3);
     if (!existing || s.severityIndex > existing.severityIndex) {
-      severityByCountry.set(s.iso3, s);
+      fallbackSeverityByCountry.set(s.iso3, s);
     }
   }
-  for (const [iso3, s] of severityByCountry) {
+
+  // Merge: country sheet takes precedence, then fallback
+  const allSeverityIso3 = new Set([
+    ...countrySeverity.keys(),
+    ...fallbackSeverityByCountry.keys(),
+  ]);
+  for (const iso3 of allSeverityIso3) {
+    const s = countrySeverity.get(iso3) ?? fallbackSeverityByCountry.get(iso3)!;
     const country = countries.get(iso3);
     if (country) {
       country.severity = s;

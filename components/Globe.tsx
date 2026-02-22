@@ -709,10 +709,10 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
     setSelectedCountryIso3,
     setSidebarTab,
     spikeMode,
+    setSpikeMode,
     mapStyle,
     setMapStyle,
     spikeColorMode,
-    setSpikeColorMode,
   } = useAppContext();
   const [spikeTooltip, setSpikeTooltip] = useState<HoveredSpike | null>(null);
   const [countryTooltip, setCountryTooltip] = useState<CountryHoverData | null>(null);
@@ -926,60 +926,44 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
         </div>
       )}
 
-      {/* Data label — what the spikes currently represent */}
-      <div className="absolute bottom-4 left-4 z-20 flex flex-col gap-2 items-start">
-        {/* Spike color mode toggle */}
+
+
+      {/* Globe controls — bottom-right */}
+      <div className="absolute bottom-4 right-4 z-20 flex flex-col gap-2 items-end">
+        {/* Spikes mode switch */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/20">
-          <span className={`text-[10px] font-mono cursor-pointer transition-colors ${spikeColorMode === "default" ? "text-cyan-400" : "text-cyan-400/40"}`} onClick={() => setSpikeColorMode("default")}>
-            Default
+          <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest mr-1">Spikes:</span>
+          <span
+            className={`text-[10px] font-mono cursor-pointer transition-colors ${spikeMode === "fundingGap" ? "text-cyan-400" : "text-cyan-400/40"}`}
+            onClick={() => setSpikeMode("fundingGap")}
+          >
+            Funding
           </span>
           <button
-            onClick={() => setSpikeColorMode(spikeColorMode === "default" ? "spectrum" : "default")}
+            onClick={() => setSpikeMode(spikeMode === "fundingGap" ? "severity" : "fundingGap")}
             className="relative w-8 h-4 rounded-full transition-colors"
-            style={{ backgroundColor: spikeColorMode === "spectrum" ? "rgba(255,180,40,0.35)" : "rgba(34,211,238,0.1)" }}
-            aria-label="Toggle spike color mode"
+            style={{ backgroundColor: spikeMode === "severity" ? "rgba(239,68,68,0.3)" : "rgba(34,211,238,0.1)" }}
+            aria-label="Toggle spike mode"
           >
             <span
               className="absolute top-0.5 h-3 w-3 rounded-full transition-all"
               style={{
-                left: spikeColorMode === "default" ? "2px" : "calc(100% - 14px)",
-                backgroundColor: spikeColorMode === "spectrum" ? "#fbbf24" : "#22d3ee",
+                left: spikeMode === "fundingGap" ? "2px" : "calc(100% - 14px)",
+                backgroundColor: spikeMode === "severity" ? "#f87171" : "#22d3ee",
               }}
             />
           </button>
-          <span className={`text-[10px] font-mono cursor-pointer transition-colors ${spikeColorMode === "spectrum" ? "text-amber-400" : "text-cyan-400/40"}`} onClick={() => setSpikeColorMode("spectrum")}>
-            Spectrum
+          <span
+            className={`text-[10px] font-mono cursor-pointer transition-colors ${spikeMode === "severity" ? "text-red-400" : "text-cyan-400/40"}`}
+            onClick={() => setSpikeMode("severity")}
+          >
+            Severity
           </span>
         </div>
-        <div className="px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/20">
-          <span className="text-[10px] font-mono text-cyan-400/70 uppercase tracking-widest">
-            Spikes: {spikeMode === "fundingGap" ? "Funding Gap" : "Severity"}
-          </span>
-        </div>
-      </div>
 
-      {/* Legend — spectrum key */}
-      {spikeColorMode === "spectrum" && (
-        <div className="absolute top-4 left-4 z-20">
-          <div className="px-3 py-2.5 rounded-lg bg-black/85 backdrop-blur-sm border border-cyan-500/20 space-y-1.5">
-            <p className="text-[9px] font-mono text-cyan-400/60 uppercase tracking-widest">
-              {spikeMode === "fundingGap" ? "Funding Gap" : "Severity"} Scale
-            </p>
-            <div className="flex items-center gap-2">
-              <span className="text-[9px] font-mono text-cyan-400/50">Low</span>
-              <div className="w-28 h-2.5 rounded-full overflow-hidden" style={{ background: "linear-gradient(to right, #ffd700, #f59e0b, #ef4444, #dc2626)" }} />
-              <span className="text-[9px] font-mono text-cyan-400/50">High</span>
-            </div>
-            <p className="text-[8px] font-mono text-cyan-400/35">
-              {spikeMode === "fundingGap" ? "Larger gap = taller & redder spike" : "Higher severity = taller & redder spike"}
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* Map style toggle */}
-      <div className="absolute bottom-4 right-4 z-20">
+        {/* Map style switch */}
         <div className="flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/20">
+          <span className="text-[10px] font-mono text-cyan-400/60 uppercase tracking-widest mr-1">View:</span>
           <span className={`text-[10px] font-mono cursor-pointer transition-colors ${mapStyle === "dots" ? "text-cyan-400" : "text-cyan-400/40"}`} onClick={() => setMapStyle("dots")}>
             Dots
           </span>
