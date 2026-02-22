@@ -16,7 +16,7 @@ export function CrisisDetail({
   crisis: CrisisData;
   onBack: () => void;
 }) {
-  const { setSelectedCountryIso3, setSidebarTab, setGlobeFocusIso3 } = useAppContext();
+  const { setSelectedCountryIso3, setSidebarTab, setGlobeFocusIso3, setCountryDetailSource } = useAppContext();
 
   const totalReq = crisis.countries.reduce(
     (s, c) => s + (c.overallFunding?.totalRequirements ?? 0),
@@ -128,6 +128,7 @@ export function CrisisDetail({
                     onClick={() => {
                       setSelectedCountryIso3(entry.iso3);
                       setGlobeFocusIso3(entry.iso3);
+                      setCountryDetailSource("crises");
                       setSidebarTab("countries");
                     }}
                     className="w-full rounded border border-cyan-500/10 bg-black/30 p-2 text-left hover:border-cyan-500/30 hover:bg-cyan-500/5 transition-all"

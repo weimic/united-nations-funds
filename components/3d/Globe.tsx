@@ -193,11 +193,13 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
     selectedCountryIso3,
     setSelectedCountryIso3,
     setSidebarTab,
+    sidebarTab,
     spikeMode,
     setSpikeMode,
     mapStyle,
     setMapStyle,
     spikeColorMode,
+    setCountryDetailSource,
   } = useAppContext();
 
   const [spikeTooltip, setSpikeTooltip] = useState<HoveredSpike | null>(null);
@@ -267,6 +269,7 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
   const handleSpikeClick = (instanceId: number) => {
     const threat = threats[instanceId];
     if (!threat) return;
+    if (sidebarTab !== "countries") setCountryDetailSource(sidebarTab);
     setSelectedCountryIso3(threat.id);
     setSidebarTab("countries");
   };
@@ -300,6 +303,7 @@ export default function Globe({ geoData }: { geoData: GeoData }) {
 
   const handleCountryClick = (iso3: string) => {
     if (!data.countries[iso3]) return;
+    if (sidebarTab !== "countries") setCountryDetailSource(sidebarTab);
     setSelectedCountryIso3(iso3);
     setSidebarTab("countries");
   };

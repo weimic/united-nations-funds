@@ -12,9 +12,10 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 
 ## Current Product Capabilities
 - **Overview tab analytics** (formerly "Global" tab)
-	- Underlooked crises ranking (top 10 by default) with **Show all** drilldown. Substats: Severity, Funded %, Gap. Score bar is solid red (`bg-red-500`) on a lighter muted track (`bg-muted/30`).
-	- Absolute funding gap ranking (top 10 by default) with **Show all** drilldown.
-	- Underlooked countries ranking (top 10 by default) with **Show all** drilldown. Substats: Severity, Funded %, Gap, Off-appeal. Score bar is solid red on lighter muted track.
+	- Overlooked crises ranking (titled "Top 10 Overlooked Crises") with **Show all** drilldown. Substats: Severity, Funded %, Gap — all substat values in amber-400. Score bar is solid red (`bg-red-500`) on a lighter muted track (`bg-muted/30`).
+	- Absolute funding gap ranking (top 10 by default) with **Show all** drilldown. Chart legend order: Funded (on-appeal), Funded (off-appeal), Unfunded Gap. X-axis starts at "$0" (not "$0M"). Tooltip uses `separator=": "` (no space before colon) and correctly maps bar names from the Bar `name` prop.
+	- Overlooked countries ranking (titled "Top 10 Overlooked Countries") with **Show all** drilldown. Substats: Severity, Funded %, Gap — all substat values in amber-400. Off-appeal substat removed.
+	- Clicking an overlooked crisis navigates to crisis detail with back-button returning to Overview tab (not Crises tab). Clicking an overlooked country navigates to country detail with back-button returning to Overview tab (not Countries tab). Uses `navigationSource` context state to track origin.
 	- All three **Show all** buttons are underlined (`underline underline-offset-2`) for discoverability.
 	- Global humanitarian overview cards and funding progress (at bottom of page).
 - **Countries tab controls**
@@ -32,7 +33,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- Aggregate stats (requirements, funded, CBPF, gap).
 	- CBPF Funding bar chart (standalone, no cost-per-person overlay). X-axis labels rotate at −35° and truncate when dense to prevent overlap.
 	- Targeted vs Reached line chart (straight lines) showing targeted (green) and reached (red) people per cluster, displayed beneath the CBPF chart.
-	- Single country card styled like the Underlooked Countries cards (neglect index bar, severity/funded/gap stats). Heading reads "Country" (not "Country Rankings").
+	- Single country card styled like the Overlooked Countries cards (neglect index bar, severity/funded/gap stats). Heading reads "Country" (not "Country Rankings").
 	- Clicking the country card focuses globe and highlights that country's borders.
 - **Crises tab**
 	- Category-based crisis browsing with per-category stats.
@@ -53,7 +54,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 ## Data Modeling Notes
 - Aggregation joins data by ISO3 with alias handling for common country naming variants.
 - INFORM parsing expands multi-ISO rows (e.g. "ECU, PER") so crisis-country representation is complete for country pages.
-- **Country severity** uses the "INFORM Severity - country" sheet (official aggregate across all crises for that country). This differs from the per-crisis severity and ensures Underlooked Countries and Underlooked Crises rankings are distinct. Falls back to the max per-crisis severity only for countries missing from the country sheet.
+- **Country severity** uses the "INFORM Severity - country" sheet (official aggregate across all crises for that country). This differs from the per-crisis severity and ensures Overlooked Countries and Overlooked Crises rankings are distinct. Falls back to the max per-crisis severity only for countries missing from the country sheet.
 - **Crisis-level severity** (`CrisisCountryEntry.severityIndex`) uses the "INFORM Severity - all crises" sheet, preserving individual crisis scores.
 - Neglect index = (severity/5) × (1 − %funded) × log₁₀(1 + requirements/$1M). Higher = more overlooked.
 - Globe coordinate mapping: `x = cos(lat)·sin(lon)`, `y = sin(lat)`, `z = cos(lat)·cos(lon)` — puts prime meridian at +z (camera front).
@@ -69,6 +70,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 - `spikeMode`: `"fundingGap" | "severity"` — controls what the spikes represent.
 - `spikeColorMode`: `"default" | "spectrum"` — controls spike coloring. Default uses mode-specific colors; spectrum uses yellow-to-red gradient based on magnitude.
 - `mapStyle`: `"dots" | "solid"` — controls globe visualization style.
+- `navigationSource`: `string | null` — tracks which tab initiated a detail navigation (e.g. `"overview"`). Used by CountriesTab and CrisesTab to route the back button to the originating tab.
 
 ## Removed Components
 - **Severity vs Funding scatter chart** (was on overview tab) — removed for clarity.

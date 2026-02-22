@@ -9,7 +9,7 @@ import { CategoryDetail } from "./CategoryDetail";
 
 /** The "Crises" tab — shows category list → category detail → crisis detail. */
 export function CrisesTab() {
-  const { data, activeCrisis, setActiveCrisis } = useAppContext();
+  const { data, activeCrisis, setActiveCrisis, navigationSource, setNavigationSource, setSidebarTab } = useAppContext();
   const [selectedCategory, setSelectedCategory] = useState<string | null>(null);
 
   const categoriesWithCounts = useMemo(() => {
@@ -25,7 +25,19 @@ export function CrisesTab() {
   }, [data.crises]);
 
   if (activeCrisis) {
-    return <CrisisDetail crisis={activeCrisis} onBack={() => setActiveCrisis(null)} />;
+    return (
+      <CrisisDetail
+        crisis={activeCrisis}
+        onBack={() => {
+          setActiveCrisis(null);
+          const source = navigationSource;
+          if (source && source !== "crises") {
+            setNavigationSource(null);
+            setSidebarTab(source as "crises" | "countries" | "overview");
+          }
+        }}
+      />
+    );
   }
 
   if (selectedCategory) {

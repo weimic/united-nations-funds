@@ -15,7 +15,7 @@ import { CrisesTab } from "./CrisesTab";
 import { CountriesTab } from "./CountriesTab";
 
 export default function AppSidebar() {
-  const { sidebarTab, setSidebarTab } = useAppContext();
+  const { sidebarTab, setSidebarTab, setNavigationSource, setCountryDetailSource } = useAppContext();
 
   return (
     <Sidebar
@@ -52,9 +52,12 @@ export default function AppSidebar() {
         <div className="group-data-[collapsible=icon]:hidden flex flex-col flex-1 min-h-0 px-2 pb-2">
           <Tabs
             value={sidebarTab}
-            onValueChange={(v) =>
-              setSidebarTab(v as "crises" | "countries" | "overview")
-            }
+            onValueChange={(v) => {
+              setSidebarTab(v as "crises" | "countries" | "overview");
+              // Clear navigation sources when manually switching tabs
+              setNavigationSource(null);
+              setCountryDetailSource(null);
+            }}
             className="flex flex-col flex-1 min-h-0"
           >
             <TabsList className="w-full grid grid-cols-3 h-9 mt-2 bg-black/60 border border-cyan-500/15 shrink-0">
