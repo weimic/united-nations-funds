@@ -48,7 +48,7 @@ export function CrisesTab() {
     <div className="flex flex-col h-full min-h-0">
       <ScrollArea className="flex-1 min-h-0">
         <div className="flex flex-col gap-1 px-2 pb-4 pt-1">
-          <p className="text-[10px] font-mono uppercase tracking-widest text-cyan-400/40 px-1 pb-1">
+          <p className="text-[23px] font-mono uppercase tracking-widest text-cyan-400/40 px-1 pb-1 leading-tight">
             Crisis Categories
           </p>
           {categoriesWithCounts.map(({ cat, count }) => (

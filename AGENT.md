@@ -1,7 +1,7 @@
-# UN Crisis Monitor - Current Project State
+# VisiUN - Current Project State
 
 ## What This App Does
-UN Crisis Monitor is an analytics and exploration tool for humanitarian funding and crisis severity. It combines INFORM severity, FTS funding, and CBPF allocation datasets to surface where needs and funding are most mismatched.
+VisiUN (formerly UN Crisis Monitor) is an analytics and exploration tool for humanitarian funding and crisis severity. It combines INFORM severity, FTS funding, and CBPF allocation datasets to surface where needs and funding are most mismatched.
 
 ## Current Data Scope
 - **Primary analysis year**: **2025** (FTS and CBPF are filtered to 2025 in aggregation).
@@ -13,11 +13,13 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 
 ## Current Product Capabilities
 - **Overview tab analytics** (formerly "Global" tab)
+	- Section titles ("Top 10 Overlooked Crises", "Top 10 Absolute Funding Gaps", "Top 10 Overlooked Countries", "Global Humanitarian Overview") rendered at `text-[23px]` (2.3× the original 10px) with `leading-tight`. Adjacent `AlertTriangle` icons scaled to `h-6 w-6` and `HoverTip` Info icons to `h-4 w-4` via `iconClassName` prop.
 	- Overlooked crises ranking (titled "Top 10 Overlooked Crises") with **Show all** drilldown. Substats: Severity, Funded %, Gap — all substat values in amber-400. Score bar is solid red (`bg-red-500`) on a lighter muted track (`bg-muted/30`).
 	- Absolute funding gap ranking (top 10 by default) with **Show all** drilldown. Chart legend order: Funded (on-appeal), Funded (off-appeal), Unfunded Gap. X-axis starts at "$0" (not "$0M"). Tooltip uses `separator=": "` (no space before colon), correctly maps bar names from the Bar `name` prop, and enforces top-to-bottom order: Funded (on-appeal), Funded (off-appeal), Unfunded Gap via `itemSorter`.
 	- Overlooked countries ranking (titled "Top 10 Overlooked Countries") with **Show all** drilldown. Substats: Severity, Funded %, Gap — all substat values in amber-400. Off-appeal substat removed.
 	- Clicking an overlooked crisis navigates to crisis detail with back-button returning to Overview tab (not Crises tab). Clicking an overlooked country navigates to country detail with back-button returning to Overview tab (not Countries tab). Uses dual navigation sources: `navigationSource` for crisis detail back and `countryDetailSource` for country detail back.
 	- All three **Show all** buttons are underlined (`underline underline-offset-2`) for discoverability.
+	- Separators between stat categories use `bg-cyan-400/70` (matching the "Show all" underline blue) instead of the default faint-grey border.
 	- Global humanitarian overview cards and funding progress (at bottom of page).
 - **Countries tab controls**
 	- Search by name/ISO3.
@@ -43,6 +45,7 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- Crisis detail data (summary, timeline, related links) is loaded from `public/data/crisisdetails.json` at build time via `data-aggregator.ts` and merged into `CrisisData` by matching `crisis_name` to `crisisName` (case-insensitive). Types: `CrisisTimelineEvent` interface in `types.ts`.
 	- **Anomaly detection badges**: Percentile-based statistical anomaly detection flags outlier countries across the global cohort. Three metrics analyzed: percent funded (low), funding gap per capita (high), and severity-funding mismatch (high). Severity: ≤P5/≥P95 → critical (red), P5–P10/P90–P95 → warning (amber). Crisis-level summary banner shows total anomaly count with severity breakdown and number of affected countries. Per-country compact badges with hover tooltip listing each anomaly's human-readable explanation. Detection runs at build time via `lib/anomalies.ts`; results stored in `CrisisCountryEntry.anomalies: FundingAnomaly[]`. Full statistical methodology documented in STATISTICS.md §7.
 - **Crises tab**
+	- "Crisis Categories" header rendered at `text-[23px]` (2.3× the original 10px) with `leading-tight`.
 	- Category-based crisis browsing with per-category stats.
 - **Globe interaction**
 	- Correct geographic orientation (east = right, west = left, prime meridian facing camera).
@@ -57,8 +60,9 @@ UN Crisis Monitor is an analytics and exploration tool for humanitarian funding 
 	- **Spike color mode** (context state only, no UI toggle): `spikeColorMode` still exists in context for programmatic use; spectrum mode colors each spike yellow-to-red by magnitude. Spike material uses `MeshBasicMaterial` with white base color so instance colors render correctly.
 	- **Map style: solid fill**: severity-based colors for crisis countries, base blue for data countries without severity, and white for neutral countries with no data. Ocean color is preserved.
 	- **Solid country map**: aligned to match dot map via −π/2 Y-axis rotation on the texture sphere. Rendered at 8192×4096 resolution with anisotropic filtering (16×), mipmap generation, subtle country border strokes, and 128-segment sphere geometry for crisp rendering.
+- **Sidebar header branding**: `logo.svg` (from `public/logo.svg`) rendered inside a `relative h-8 w-8 overflow-hidden rounded-lg` div that carries the red glow (`shadow-[0_0_12px_rgba(220,40,40,0.5)]`). The `<img>` is absolutely positioned at `width: 174%, height: 174%, top: -37%, left: -37%` so the SVG's internal whitespace (the red box occupies ~57.4% of the 2048×2048 viewBox) is cropped out and the red box fills the 32×32 container edge-to-edge, eliminating the gap between the visible logo and the glow. App title reads **VisiUN**, subtitle reads "Global Analysis" — both in `font-mono`.
 - **About / Methodology dialog** (`AboutDialog`, triggered from `AppSidebar` footer)
-	- Circular Info (ℹ) button in the sidebar footer, styled identically to the chat toggle button (black/80, cyan border, glow shadow).
+	- Circular Info (ℹ) button in the sidebar footer, styled identically to the chat toggle button (black/80, cyan border, glow shadow). Dialog title header reads **VisiUN**.
 	- Opens a two-tab dialog:
 		- **About tab**: project purpose, data sources (FTS, INFORM, CBPF, crisis details), key capabilities summary, and important caveats (on-appeal vs off-appeal behavior, crisis overlap, CBPF 0% reach interpretation).
 		- **Methodology tab**: Neglect Index formula with term-by-term breakdown, on-appeal vs off-appeal statistical rationale (Spearman correlation figures), percentile-based anomaly detection methodology with severity thresholds (P5/P10/P90/P95), CBPF delivery rate explanation, and data processing notes.

@@ -92,12 +92,14 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
 
       <SidebarHeader className="relative z-10 border-b border-cyan-500/20 px-4 py-3 shrink-0">
         <div className="flex items-center gap-2">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-red-600 to-red-800 shadow-[0_0_12px_rgba(220,40,40,0.4)]">
-            <Globe2 className="h-4 w-4 text-white" />
-          </div>
+          <img
+            src="/logo3.svg"
+            alt="VisiUN logo"
+            className="h-8 w-8 rounded-lg shadow-[0_0_12px_rgba(220,40,40,0.5)]"
+          />
           <div className="group-data-[collapsible=icon]:hidden">
             <h1 className="text-sm font-bold tracking-tight font-mono text-cyan-100">
-              UN Crisis Monitor
+              VisiUN
             </h1>
             <p className="text-[10px] font-mono tracking-widest text-cyan-400/50 uppercase">
               Global Analysis

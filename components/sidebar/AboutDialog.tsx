@@ -256,7 +256,7 @@ export function AboutDialog() {
             <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-red-600 to-red-800 shadow-[0_0_10px_rgba(220,40,40,0.3)]">
               <AlertTriangle className="h-3.5 w-3.5 text-white" />
             </div>
-            UN Crisis Monitor
+            VisiUN
           </DialogTitle>
         </DialogHeader>
 
