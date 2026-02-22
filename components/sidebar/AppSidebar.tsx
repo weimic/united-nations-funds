@@ -1,5 +1,6 @@
 "use client";
 
+import { useRef, useState, useCallback } from "react";
 import { useAppContext } from "@/lib/app-context";
 import {
   Sidebar,
@@ -23,6 +24,41 @@ interface AppSidebarProps {
 
 export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) {
   const { sidebarTab, setSidebarTab, setNavigationSource, setCountryDetailSource } = useAppContext();
+
+  const [chatHeightPx, setChatHeightPx] = useState<number | null>(null);
+  const [chatFullscreen, setChatFullscreen] = useState(false);
+  const sidebarContentRef = useRef<HTMLDivElement>(null);
+  const dragStartY = useRef<number | null>(null);
+  const dragStartHeight = useRef<number>(0);
+
+  const handleResizeMouseDown = useCallback((e: React.MouseEvent) => {
+    e.preventDefault();
+    const container = sidebarContentRef.current;
+    if (!container) return;
+    dragStartY.current = e.clientY;
+    dragStartHeight.current = chatHeightPx ?? container.clientHeight * 0.5;
+
+    const onMouseMove = (ev: MouseEvent) => {
+      if (dragStartY.current === null) return;
+      const delta = dragStartY.current - ev.clientY;
+      const containerH = sidebarContentRef.current?.clientHeight ?? container.clientHeight;
+      const newHeight = Math.max(80, Math.min(containerH - 60, dragStartHeight.current + delta));
+      setChatHeightPx(newHeight);
+    };
+
+    const onMouseUp = () => {
+      dragStartY.current = null;
+      document.removeEventListener("mousemove", onMouseMove);
+      document.removeEventListener("mouseup", onMouseUp);
+    };
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+  }, [chatHeightPx]);
+
+  const handleToggleFullscreen = useCallback(() => {
+    setChatFullscreen(prev => !prev);
+  }, []);
 
   return (
     <Sidebar
@@ -56,10 +92,19 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
       </SidebarHeader>
 
       <SidebarContent className="relative z-10 p-0 overflow-hidden flex flex-col">
-        {/* Stats / tabs — takes all available space, or top 50% when chat is open */}
+        <div ref={sidebarContentRef} className="flex flex-col flex-1 min-h-0 overflow-hidden">
+        {/* Stats / tabs — takes remaining space; hidden in fullscreen chat mode */}
         <div
           className="group-data-[collapsible=icon]:hidden flex flex-col min-h-0 px-2 pb-2 overflow-hidden"
-          style={{ flex: chatOpen ? "0 0 50%" : "1 1 0%" }}
+          style={{
+            flex: chatOpen
+              ? chatFullscreen
+                ? "0 0 0px"
+                : chatHeightPx
+                  ? `0 0 calc(100% - ${chatHeightPx}px)`
+                  : "0 0 50%"
+              : "1 1 0%",
+          }}
         >
           <Tabs
             value={sidebarTab}
@@ -116,12 +161,38 @@ export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) 
           </Tabs>
         </div>
 
-        {/* Chat panel — bottom 50% of sidebar when open */}
+        {/* Chat panel — resizable bottom section when open */}
         {chatOpen && (
-          <div className="group-data-[collapsible=icon]:hidden flex flex-col border-t border-cyan-500/20 overflow-hidden" style={{ flex: "0 0 50%" }}>
-            <ChatWindow isOpen={chatOpen} onClose={onChatToggle} embedded />
+          <div
+            className="group-data-[collapsible=icon]:hidden flex flex-col border-t border-cyan-500/20 overflow-hidden"
+            style={{
+              flex: chatFullscreen
+                ? "1 1 0%"
+                : chatHeightPx
+                  ? `0 0 ${chatHeightPx}px`
+                  : "0 0 50%",
+            }}
+          >
+            {/* Drag resize handle */}
+            {!chatFullscreen && (
+              <div
+                onMouseDown={handleResizeMouseDown}
+                className="h-2 w-full shrink-0 cursor-row-resize flex items-center justify-center group select-none"
+                title="Drag to resize"
+              >
+                <div className="w-8 h-0.5 rounded-full bg-cyan-500/20 group-hover:bg-cyan-400/60 transition-colors" />
+              </div>
+            )}
+            <ChatWindow
+              isOpen={chatOpen}
+              onClose={onChatToggle}
+              embedded
+              isFullscreen={chatFullscreen}
+              onToggleFullscreen={handleToggleFullscreen}
+            />
           </div>
         )}
+        </div>
       </SidebarContent>
 
       <SidebarFooter className="relative z-10 border-t border-cyan-500/15 px-3 py-2 group-data-[collapsible=icon]:hidden shrink-0">

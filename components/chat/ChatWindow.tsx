@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { X, Send, Trash2, AlertTriangle, Bot } from "lucide-react";
+import { X, Send, Trash2, AlertTriangle, Bot, Maximize2, Minimize2 } from "lucide-react";
 import { useAppContext } from "@/lib/app-context";
 import { useChatState } from "@/hooks/use-chat-state";
 import { ChatMessageBubble } from "./ChatMessageBubble";
@@ -12,6 +12,10 @@ interface ChatWindowProps {
   onClose: () => void;
   /** When true, renders inline (no fixed overlay) — used inside the sidebar split panel */
   embedded?: boolean;
+  /** Whether the embedded panel is in fullscreen mode */
+  isFullscreen?: boolean;
+  /** Toggle fullscreen mode for the embedded panel */
+  onToggleFullscreen?: () => void;
 }
 
 const SUGGESTED_QUESTIONS = [
@@ -21,7 +25,7 @@ const SUGGESTED_QUESTIONS = [
   "How is CBPF funding distributed?",
 ];
 
-export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProps) {
+export function ChatWindow({ isOpen, onClose, embedded = false, isFullscreen = false, onToggleFullscreen }: ChatWindowProps) {
   const { messages, isLoading, error, sendMessage, clearMessages } = useChatState();
   const {
     setGlobeFocusIso3,
@@ -31,13 +35,20 @@ export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProp
   const [input, setInput] = useState("");
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
+  const prevMsgCountRef = useRef(0);
 
-  // Auto-scroll on new messages — ref points directly at the scrollable div
+  // Auto-scroll only when the user sends a new message;
+  // AI replies preserve scroll position so users can read freely.
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    if (!scrollRef.current) return;
+    if (messages.length > prevMsgCountRef.current) {
+      const lastMsg = messages[messages.length - 1];
+      if (lastMsg?.role === "user") {
+        scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+      }
     }
-  }, [messages, isLoading]);
+    prevMsgCountRef.current = messages.length;
+  }, [messages]);
 
   // Focus input when panel opens
   useEffect(() => {
@@ -80,13 +91,24 @@ export function ChatWindow({ isOpen, onClose, embedded = false }: ChatWindowProp
               Crisis AI
             </span>
           </div>
-          <button
-            onClick={clearMessages}
-            className="p-1 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
-            title="Clear chat"
-          >
-            <Trash2 className="h-3 w-3" />
-          </button>
+          <div className="flex items-center gap-1">
+            {onToggleFullscreen && (
+              <button
+                onClick={onToggleFullscreen}
+                className="p-1 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+                title={isFullscreen ? "Restore" : "Fullscreen"}
+              >
+                {isFullscreen ? <Minimize2 className="h-3 w-3" /> : <Maximize2 className="h-3 w-3" />}
+              </button>
+            )}
+            <button
+              onClick={clearMessages}
+              className="p-1 rounded text-cyan-500/50 hover:text-cyan-400 hover:bg-cyan-500/10 transition-colors"
+              title="Clear chat"
+            >
+              <Trash2 className="h-3 w-3" />
+            </button>
+          </div>
         </div>
 
         {/* Messages — scrollable div so ref works directly */}
