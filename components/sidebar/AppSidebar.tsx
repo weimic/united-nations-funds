@@ -13,8 +13,16 @@ import { Globe2, AlertTriangle, MapPin } from "lucide-react";
 import { OverviewTab } from "./OverviewTab";
 import { CrisesTab } from "./CrisesTab";
 import { CountriesTab } from "./CountriesTab";
+import { ChatWindow } from "@/components/chat/ChatWindow";
+import { ChatToggleButton } from "@/components/chat/ChatToggleButton";
 
-export default function AppSidebar() {
+interface AppSidebarProps {
+  chatOpen: boolean;
+  onChatToggle: () => void;
+}
+
+export default function AppSidebar({ chatOpen, onChatToggle }: AppSidebarProps) {
+  const { sidebarTab, setSidebarTab } = useAppContext();
   const { sidebarTab, setSidebarTab, setNavigationSource, setCountryDetailSource } = useAppContext();
 
   return (
@@ -49,7 +57,11 @@ export default function AppSidebar() {
       </SidebarHeader>
 
       <SidebarContent className="relative z-10 p-0 overflow-hidden flex flex-col">
-        <div className="group-data-[collapsible=icon]:hidden flex flex-col flex-1 min-h-0 px-2 pb-2">
+        {/* Stats / tabs — takes all available space, or top 50% when chat is open */}
+        <div
+          className="group-data-[collapsible=icon]:hidden flex flex-col min-h-0 px-2 pb-2 overflow-hidden"
+          style={{ flex: chatOpen ? "0 0 50%" : "1 1 0%" }}
+        >
           <Tabs
             value={sidebarTab}
             onValueChange={(v) => {
@@ -104,12 +116,22 @@ export default function AppSidebar() {
             </TabsContent>
           </Tabs>
         </div>
+
+        {/* Chat panel — bottom 50% of sidebar when open */}
+        {chatOpen && (
+          <div className="group-data-[collapsible=icon]:hidden flex flex-col border-t border-cyan-500/20 overflow-hidden" style={{ flex: "0 0 50%" }}>
+            <ChatWindow isOpen={chatOpen} onClose={onChatToggle} embedded />
+          </div>
+        )}
       </SidebarContent>
 
-      <SidebarFooter className="relative z-10 border-t border-cyan-500/15 p-3 group-data-[collapsible=icon]:hidden shrink-0">
-        <p className="text-[10px] font-mono text-cyan-400/30 text-center tracking-widest uppercase">
-          OCHA FTS · INFORM · CBPF
-        </p>
+      <SidebarFooter className="relative z-10 border-t border-cyan-500/15 px-3 py-2 group-data-[collapsible=icon]:hidden shrink-0">
+        <div className="flex items-center justify-between">
+          <p className="text-[10px] font-mono text-cyan-400/30 tracking-widest uppercase">
+            OCHA FTS · INFORM · CBPF
+          </p>
+          <ChatToggleButton isOpen={chatOpen} onClick={onChatToggle} />
+        </div>
       </SidebarFooter>
     </Sidebar>
   );

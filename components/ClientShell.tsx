@@ -1,5 +1,6 @@
 "use client";
 
+import { useState } from "react";
 import dynamic from "next/dynamic";
 import { AppProvider } from "@/lib/app-context";
 import { SidebarProvider, SidebarTrigger } from "@/components/ui/sidebar";
@@ -26,6 +27,8 @@ interface ClientShellProps {
 }
 
 export default function ClientShell({ data }: ClientShellProps) {
+  const [chatOpen, setChatOpen] = useState(false);
+
   return (
     <AppProvider data={data}>
       <SidebarProvider
@@ -37,7 +40,7 @@ export default function ClientShell({ data }: ClientShellProps) {
             <SidebarTrigger className="absolute top-4 right-4 z-40 bg-black/80 backdrop-blur-sm border border-cyan-500/30 shadow-[0_0_12px_rgba(0,200,255,0.15)] text-cyan-400 hover:bg-black/90 hover:border-cyan-400/50" />
             <Globe geoData={data.geoData} />
           </main>
-          <AppSidebar />
+          <AppSidebar chatOpen={chatOpen} onChatToggle={() => setChatOpen(!chatOpen)} />
         </div>
       </SidebarProvider>
     </AppProvider>
