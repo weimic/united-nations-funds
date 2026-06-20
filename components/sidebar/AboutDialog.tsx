@@ -1,5 +1,6 @@
 "use client";
 
+import { useEffect, useState } from "react";
 import {
   Dialog,
   DialogContent,
@@ -8,7 +9,7 @@ import {
   DialogTrigger,
 } from "@/components/ui/dialog";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Info, Brain, AlertTriangle } from "lucide-react";
+import { Info, Brain } from "lucide-react";
 import { ScrollArea } from "@/components/ui/scroll-area";
 
 
@@ -228,13 +229,37 @@ function MethodologyTab() {
 /*  Main dialog                                                        */
 /* ------------------------------------------------------------------ */
 
+const ABOUT_TRIGGER_CLASS =
+  "cursor-pointer flex items-center justify-center w-8 h-8 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/30 shadow-[0_0_10px_rgba(0,200,255,0.15)] text-cyan-400 hover:bg-black/90 hover:border-cyan-400/50 transition-all";
+
 export function AboutDialog() {
+  const [mounted, setMounted] = useState(false);
+
+  useEffect(() => {
+    setMounted(true);
+  }, []);
+
+  // Radix Dialog generates SSR/client IDs that can mismatch and cause hydration warnings.
+  if (!mounted) {
+    return (
+      <button
+        type="button"
+        title="About this tool"
+        className={ABOUT_TRIGGER_CLASS}
+        aria-hidden
+        tabIndex={-1}
+      >
+        <Info className="h-4 w-4" />
+      </button>
+    );
+  }
+
   return (
     <Dialog>
       <DialogTrigger asChild>
         <button
           title="About this tool"
-          className="cursor-pointer flex items-center justify-center w-8 h-8 rounded-full bg-black/80 backdrop-blur-sm border border-cyan-500/30 shadow-[0_0_10px_rgba(0,200,255,0.15)] text-cyan-400 hover:bg-black/90 hover:border-cyan-400/50 transition-all"
+          className={ABOUT_TRIGGER_CLASS}
         >
           <Info className="h-4 w-4" />
         </button>
@@ -254,8 +279,12 @@ export function AboutDialog() {
 
         <DialogHeader className="relative z-10 px-5 pt-5 pb-0 shrink-0">
           <DialogTitle className="flex items-center gap-2 text-cyan-100 font-mono tracking-tight">
-            <div className="flex h-7 w-7 items-center justify-center rounded-lg bg-gradient-to-br from-red-600 to-red-800 shadow-[0_0_10px_rgba(220,40,40,0.3)]">
-              <AlertTriangle className="h-3.5 w-3.5 text-white" />
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-red-600 to-red-800 shadow-[0_0_10px_rgba(220,40,40,0.3)]">
+                <img
+                  src="/logo3.svg"
+                  alt="VisiUN logo"
+                  className="h-8 w-8 rounded-lg shadow-[0_0_12px_rgba(220,40,40,0.5)]"
+                />
             </div>
             VisiUN
           </DialogTitle>

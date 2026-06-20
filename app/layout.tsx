@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "UN Crisis Monitor — Global Funding & Severity Analysis",
+  title: "VisiUN",
   description:
     "Interactive 3D globe visualizing INFORM severity, OCHA FTS funding, and CBPF allocations across global humanitarian crises.",
 };
